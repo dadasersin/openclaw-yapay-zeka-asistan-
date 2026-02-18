@@ -113,6 +113,11 @@ export function resolveIMessageInboundDecision(params: {
     return { kind: "drop", reason: "from me" };
   }
 
+  // Drop bridge-reported "from me"; avoids duplicate when bridge sends same user message twice with is_from_me=true.
+  if (params.message.is_from_me) {
+    return { kind: "drop", reason: "from me" };
+  }
+
   const chatId = params.message.chat_id ?? undefined;
   const chatGuid = params.message.chat_guid ?? undefined;
   const chatIdentifier = params.message.chat_identifier ?? undefined;
