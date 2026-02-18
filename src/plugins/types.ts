@@ -322,6 +322,7 @@ export type PluginHookName =
   | "before_model_resolve"
   | "before_prompt_build"
   | "before_agent_start"
+  | "before_agent_reply"
   | "llm_input"
   | "llm_output"
   | "agent_end"
@@ -342,7 +343,6 @@ export type PluginHookName =
   | "subagent_spawned"
   | "subagent_ended"
   | "gateway_start"
-  | "before_agent_reply"
   | "gateway_stop";
 
 export const PLUGIN_HOOK_NAMES = [
