@@ -11,6 +11,7 @@ export {
   readConfigFileSnapshotForWrite,
   resolveConfigSnapshotHash,
   setRuntimeConfigSnapshot,
+  tryLoadValidConfigBackup,
   writeConfigFile,
 } from "./io.js";
 export { migrateLegacyConfig } from "./legacy-migrate.js";
