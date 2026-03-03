@@ -1,0 +1,63 @@
+--- a/src/plugins/discovery.ts
++++ b/src/plugins/discovery.ts
+@@ -390,7 +390,7 @@ function discoverInDirectory(params: {
+       continue;
+     }
+ 
+-    const rejectHardlinks = params.origin !== "bundled";
++    const rejectHardlinks = params.origin === "workspace";
+     const manifest = readPackageManifest(fullPath, rejectHardlinks);
+     const extensionResolution = resolvePackageExtensionEntries(manifest ?? undefined);
+     const extensions = extensionResolution.status === "ok" ? extensionResolution.entries : [];
+@@ -493,7 +493,7 @@ function discoverFromPath(params: {
+   }
+ 
+   if (stat.isDirectory()) {
+-    const rejectHardlinks = params.origin !== "bundled";
++    const rejectHardlinks = params.origin === "workspace";
+     const manifest = readPackageManifest(resolved, rejectHardlinks);
+     const extensionResolution = resolvePackageExtensionEntries(manifest ?? undefined);
+     const extensions = extensionResolution.status === "ok" ? extensionResolution.entries : [];
+--- a/src/plugins/loader.ts
++++ b/src/plugins/loader.ts
+@@ -538,7 +538,7 @@ export function loadOpenClawPlugins(opti
+       absolutePath: candidate.source,
+       rootPath: pluginRoot,
+       boundaryLabel: "plugin root",
+-      rejectHardlinks: candidate.origin !== "bundled",
++      rejectHardlinks: candidate.origin === "workspace",
+       skipLexicalRootCheck: true,
+     });
+     if (!opened.ok) {
+--- a/src/plugins/manifest-registry.ts
++++ b/src/plugins/manifest-registry.ts
+@@ -167,7 +167,7 @@ export function loadPluginManifestRegist
+   const realpathCache = new Map<string, string>();
+ 
+   for (const candidate of candidates) {
+-    const rejectHardlinks = candidate.origin !== "bundled";
++    const rejectHardlinks = candidate.origin === "workspace";
+     const manifestRes = loadPluginManifest(candidate.rootDir, rejectHardlinks);
+     if (!manifestRes.ok) {
+       diagnostics.push({
+--- a/src/plugins/manifest.ts
++++ b/src/plugins/manifest.ts
+@@ -44,7 +44,7 @@ export function resolvePluginManifestPat
+ 
+ export function loadPluginManifest(
+   rootDir: string,
+-  rejectHardlinks = true,
++  rejectHardlinks = false,
+ ): PluginManifestLoadResult {
+   const manifestPath = resolvePluginManifestPath(rootDir);
+   const opened = openBoundaryFileSync({
+--- a/src/plugins/update.ts
++++ b/src/plugins/update.ts
+@@ -86,6 +86,7 @@ async function readInstalledPackageVersi
+     absolutePath: manifestPath,
+     rootPath: dir,
+     boundaryLabel: "installed plugin directory",
++    rejectHardlinks: false,
+   });
+   if (!opened.ok) {
+     return undefined;
