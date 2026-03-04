@@ -20,7 +20,7 @@
      const extensions = extensionResolution.status === "ok" ? extensionResolution.entries : [];
 --- a/src/plugins/loader.ts
 +++ b/src/plugins/loader.ts
-@@ -538,7 +538,7 @@ export function loadOpenClawPlugins(opti
+@@ -620,7 +620,7 @@ export function loadOpenClawPlugins(opti
        absolutePath: candidate.source,
        rootPath: pluginRoot,
        boundaryLabel: "plugin root",
