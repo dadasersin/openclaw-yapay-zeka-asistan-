@@ -457,14 +457,15 @@ export async function runMemoryFlushIfNeeded(params: {
     entry ?? params.sessionEntry,
     params.storePath,
   );
+  let contextHashBeforeFlush: string | undefined;
   if (sessionFilePath) {
     try {
       const tailMessages = readTranscriptTailMessages(sessionFilePath, 10);
-      const contextHash = computeContextHash(tailMessages);
+      contextHashBeforeFlush = computeContextHash(tailMessages);
       const previousHash = entry?.memoryFlushContextHash;
-      if (previousHash && contextHash === previousHash) {
+      if (previousHash && contextHashBeforeFlush === previousHash) {
         logVerbose(
-          `memoryFlush skipped (context hash unchanged): sessionKey=${params.sessionKey} hash=${contextHash}`,
+          `memoryFlush skipped (context hash unchanged): sessionKey=${params.sessionKey} hash=${contextHashBeforeFlush}`,
         );
         return entry ?? params.sessionEntry;
       }
@@ -567,17 +568,11 @@ export async function runMemoryFlushIfNeeded(params: {
           update: async () => ({
             memoryFlushAt: Date.now(),
             memoryFlushCompactionCount,
-            ...(sessionFilePath
-              ? {
-                  memoryFlushContextHash: (() => {
-                    try {
-                      const msgs = readTranscriptTailMessages(sessionFilePath, 10);
-                      return computeContextHash(msgs);
-                    } catch {
-                      return undefined;
-                    }
-                  })(),
-                }
+            // Use the hash computed *before* the flush run. Reading after flush
+            // would include the flush turn's own messages, making the hash differ
+            // from what the next pre-flush check computes — dedup would never match.
+            ...(contextHashBeforeFlush != null
+              ? { memoryFlushContextHash: contextHashBeforeFlush }
               : {}),
           }),
         });
@@ -633,8 +628,20 @@ function readTranscriptTailMessages(
   filePath: string,
   maxMessages: number,
 ): Array<{ role?: string; content?: unknown }> {
-  const content = fs.readFileSync(filePath, "utf-8");
-  const lines = content.split(/\r?\n/);
+  // Only read the tail of the file to avoid loading multi-MB transcripts (#15145).
+  const TAIL_BYTES = 64 * 1024; // 64KB — same budget as readSessionLogSnapshot
+  const stat = fs.statSync(filePath);
+  const start = Math.max(0, stat.size - TAIL_BYTES);
+  const buf = Buffer.alloc(Math.min(stat.size, TAIL_BYTES));
+  const fd = fs.openSync(filePath, "r");
+  try {
+    fs.readSync(fd, buf, 0, buf.length, start);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const tail = buf.toString("utf-8");
+  // If we started mid-file, drop the first (likely partial) line.
+  const lines = (start > 0 ? tail.slice(tail.indexOf("\n") + 1) : tail).split(/\r?\n/);
   const messages: Array<{ role?: string; content?: unknown }> = [];
   // Read from the end for efficiency — we only need the tail.
   for (let i = lines.length - 1; i >= 0 && messages.length < maxMessages; i--) {
