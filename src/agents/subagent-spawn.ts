@@ -55,6 +55,10 @@ export type SpawnSubagentParams = {
   cleanup?: "delete" | "keep";
   sandbox?: SpawnSubagentSandboxMode;
   expectsCompletionMessage?: boolean;
+  /** Channel plugin id to send an external completion notification to (e.g. 'discord', 'telegram'). */
+  notifyChannel?: string;
+  /** Target channel/chat id for the external completion notification. */
+  notifyTarget?: string;
   attachments?: Array<{
     name: string;
     content: string;
@@ -657,6 +661,8 @@ export async function spawnSubagentDirect(
       attachmentsDir: attachmentAbsDir,
       attachmentsRootDir: attachmentRootDir,
       retainAttachmentsOnKeep: retainOnSessionKeep,
+      notifyChannel: params.notifyChannel,
+      notifyTarget: params.notifyTarget,
     });
   } catch (err) {
     if (attachmentAbsDir) {
