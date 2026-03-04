@@ -120,4 +120,10 @@ describe("computeContextHash", () => {
     // Both have same last 3 user/assistant but different lengths
     expect(computeContextHash(base)).not.toBe(computeContextHash(extended));
   });
+
+  it("includes role in hash so same content under different roles produces different hash", () => {
+    const asUser = [{ role: "user", content: "hello" }];
+    const asAssistant = [{ role: "assistant", content: "hello" }];
+    expect(computeContextHash(asUser)).not.toBe(computeContextHash(asAssistant));
+  });
 });
