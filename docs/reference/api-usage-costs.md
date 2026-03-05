@@ -84,6 +84,7 @@ See [Memory](/concepts/memory).
 - **Grok (xAI)**: `XAI_API_KEY`
 - **Kimi (Moonshot)**: `KIMI_API_KEY` or `MOONSHOT_API_KEY`
 - **Perplexity Search API**: `PERPLEXITY_API_KEY`
+- **Querit Search API**: `QUERIT_API_KEY`
 
 **Brave Search free credit:** Each Brave plan includes $5/month in renewing
 free credit. The Search plan costs $5 per 1,000 requests, so the credit covers

@@ -23,6 +23,8 @@ const {
   resolveKimiBaseUrl,
   extractKimiCitations,
   resolveBraveMode,
+  resolveQueritApiKey,
+  resolveQueritConfig,
 } = __testing;
 
 const kimiApiKeyEnv = ["KIMI_API", "KEY"].join("_");
@@ -391,5 +393,45 @@ describe("resolveBraveMode", () => {
 
   it("falls back to 'web' for unrecognized mode values", () => {
     expect(resolveBraveMode({ mode: "invalid" })).toBe("web");
+  });
+});
+
+describe("web_search querit config resolution", () => {
+  const queritTestKey = "querit-test-key"; // pragma: allowlist secret
+  const queritEnvKey = "querit-env-key"; // pragma: allowlist secret
+  const queritConfigKey = "querit-config-key"; // pragma: allowlist secret
+
+  it("uses config apiKey when provided", () => {
+    expect(resolveQueritApiKey({ apiKey: queritTestKey })).toBe(queritTestKey);
+  });
+
+  it("falls back to QUERIT_API_KEY env var", () => {
+    withEnv({ QUERIT_API_KEY: queritEnvKey }, () => {
+      expect(resolveQueritApiKey({})).toBe(queritEnvKey);
+    });
+  });
+
+  it("config key takes precedence over env var", () => {
+    withEnv({ QUERIT_API_KEY: queritEnvKey }, () => {
+      expect(resolveQueritApiKey({ apiKey: queritConfigKey })).toBe(queritConfigKey);
+    });
+  });
+
+  it("returns undefined when no key is configured", () => {
+    withEnv({ QUERIT_API_KEY: undefined }, () => {
+      expect(resolveQueritApiKey({})).toBeUndefined();
+      expect(resolveQueritApiKey(undefined)).toBeUndefined();
+    });
+  });
+
+  it("extracts querit config from search config object", () => {
+    const config = resolveQueritConfig({ provider: "querit", querit: { apiKey: "querit-key" } }); // pragma: allowlist secret
+    expect(config).toEqual({ apiKey: "querit-key" }); // pragma: allowlist secret
+  });
+
+  it("returns empty object when querit key is absent from search config", () => {
+    expect(resolveQueritConfig({ provider: "brave" })).toEqual({});
+    expect(resolveQueritConfig({})).toEqual({});
+    expect(resolveQueritConfig(undefined)).toEqual({});
   });
 });
