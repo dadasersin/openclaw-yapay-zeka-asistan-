@@ -766,6 +766,7 @@ export async function prepareSlackMessage(params: {
     OriginatingChannel: "slack" as const,
     OriginatingTo: slackTo,
     NativeChannelId: message.channel,
+    OriginatingConversationId: message.channel,
   }) satisfies FinalizedMsgContext;
   const pinnedMainDmOwner = isDirectMessage
     ? resolvePinnedMainDmOwnerFromAllowlist({
