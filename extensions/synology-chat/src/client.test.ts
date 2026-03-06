@@ -178,6 +178,30 @@ describe("sendMessage chunking", () => {
     expect(httpsRequest.mock.calls.length).toBe(1);
   });
 
+  it("only includes user_ids in the first chunk to avoid duplicate notifications", async () => {
+    mockSuccessResponse();
+    const longText = "word ".repeat(1000); // ~5000 chars, will produce multiple chunks
+    await settleTimers(sendMessage("https://nas.example.com/incoming", longText, 42));
+    const httpsRequest = vi.mocked(https.request);
+    const calls = httpsRequest.mock.calls;
+    expect(calls.length).toBeGreaterThan(1);
+
+    // Extract payload bodies from each call
+    for (let i = 0; i < calls.length; i++) {
+      // The body is written via req.write — get it from the mock
+      const req = httpsRequest.mock.results[i].value;
+      const writeCall = req.write.mock.calls[0][0] as string;
+      const payloadStr = decodeURIComponent(writeCall.replace("payload=", ""));
+      const payload = JSON.parse(payloadStr);
+
+      if (i === 0) {
+        expect(payload.user_ids).toEqual([42]);
+      } else {
+        expect(payload.user_ids).toBeUndefined();
+      }
+    }
+  });
+
   it("returns false if any chunk fails", async () => {
     const httpsRequest = vi.mocked(https.request);
     let callCount = 0;

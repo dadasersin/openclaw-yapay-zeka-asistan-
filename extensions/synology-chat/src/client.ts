@@ -98,8 +98,10 @@ export async function sendMessage(
   allowInsecureSsl = true,
 ): Promise<boolean> {
   const chunks = splitTextForSynology(text);
-  for (const chunk of chunks) {
-    const ok = await sendSingleMessage(incomingUrl, chunk, userId, allowInsecureSsl);
+  for (let i = 0; i < chunks.length; i++) {
+    // Only include user_ids in the first chunk to avoid duplicate push notifications
+    const chunkUserId = i === 0 ? userId : undefined;
+    const ok = await sendSingleMessage(incomingUrl, chunks[i], chunkUserId, allowInsecureSsl);
     if (!ok) return false;
   }
   return true;
