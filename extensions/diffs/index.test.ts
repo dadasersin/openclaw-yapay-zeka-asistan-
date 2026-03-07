@@ -29,6 +29,7 @@ describe("diffs plugin registration", () => {
       registerCli() {},
       registerService() {},
       registerProvider() {},
+      registerMediaProvider() {},
       registerCommand() {},
       registerContextEngine() {},
       resolvePath(input: string) {
@@ -105,6 +106,7 @@ describe("diffs plugin registration", () => {
       registerCli() {},
       registerService() {},
       registerProvider() {},
+      registerMediaProvider() {},
       registerCommand() {},
       registerContextEngine() {},
       resolvePath(input: string) {

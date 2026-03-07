@@ -131,6 +131,107 @@ export type ProviderPlugin = {
   refreshOAuth?: (cred: OAuthCredential) => Promise<OAuthCredential>;
 };
 
+// =============================================================================
+// Plugin Media Providers (STT, TTS, Image, Video)
+// =============================================================================
+
+export type MediaProviderCapability = "audio" | "image" | "video" | "tts";
+
+export type MediaProviderTranscribeAudioRequest = {
+  buffer: Buffer;
+  fileName: string;
+  mime?: string;
+  apiKey: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+  model?: string;
+  language?: string;
+  prompt?: string;
+  query?: Record<string, string | number | boolean>;
+  timeoutMs: number;
+  fetchFn?: typeof fetch;
+};
+
+export type MediaProviderTranscribeAudioResult = {
+  text: string;
+  model?: string;
+};
+
+export type MediaProviderDescribeImageRequest = {
+  buffer: Buffer;
+  fileName: string;
+  mime?: string;
+  model: string;
+  provider: string;
+  prompt?: string;
+  maxTokens?: number;
+  timeoutMs: number;
+  profile?: string;
+  preferredProfile?: string;
+  agentDir: string;
+  apiKey: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+};
+
+export type MediaProviderDescribeImageResult = {
+  text: string;
+  model?: string;
+};
+
+export type MediaProviderDescribeVideoRequest = {
+  buffer: Buffer;
+  fileName: string;
+  mime?: string;
+  apiKey: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+  model?: string;
+  prompt?: string;
+  timeoutMs: number;
+};
+
+export type MediaProviderDescribeVideoResult = {
+  text: string;
+  model?: string;
+};
+
+export type MediaProviderTextToSpeechRequest = {
+  text: string;
+  model?: string;
+  voice?: string;
+  apiKey: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+  timeoutMs: number;
+  fetchFn?: typeof fetch;
+};
+
+export type MediaProviderTextToSpeechResult = {
+  audio: Buffer;
+  mime: string;
+};
+
+export type MediaProviderPlugin = {
+  id: string;
+  label: string;
+  capabilities: MediaProviderCapability[];
+  docsPath?: string;
+  aliases?: string[];
+  transcribeAudio?: (
+    req: MediaProviderTranscribeAudioRequest,
+  ) => Promise<MediaProviderTranscribeAudioResult>;
+  describeImage?: (
+    req: MediaProviderDescribeImageRequest,
+  ) => Promise<MediaProviderDescribeImageResult>;
+  describeVideo?: (
+    req: MediaProviderDescribeVideoRequest,
+  ) => Promise<MediaProviderDescribeVideoResult>;
+  textToSpeech?: (
+    req: MediaProviderTextToSpeechRequest,
+  ) => Promise<MediaProviderTextToSpeechResult>;
+};
+
 export type OpenClawPluginGatewayMethod = {
   method: string;
   handler: GatewayRequestHandler;
@@ -285,6 +386,11 @@ export type OpenClawPluginApi = {
   registerCli: (registrar: OpenClawPluginCliRegistrar, opts?: { commands?: string[] }) => void;
   registerService: (service: OpenClawPluginService) => void;
   registerProvider: (provider: ProviderPlugin) => void;
+  /**
+   * Register a media provider plugin (STT, TTS, image/video understanding).
+   * Supported capabilities: "audio" (STT), "image", "video", "tts"
+   */
+  registerMediaProvider: (provider: MediaProviderPlugin) => void;
   /**
    * Register a custom command that bypasses the LLM agent.
    * Plugin commands are processed before built-in commands and before agent invocation.

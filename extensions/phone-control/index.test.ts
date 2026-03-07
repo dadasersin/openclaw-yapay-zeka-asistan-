@@ -40,6 +40,7 @@ function createApi(params: {
     registerService() {},
     registerProvider() {},
     registerContextEngine() {},
+    registerMediaProvider() {},
     registerCommand: params.registerCommand,
     resolvePath(input: string) {
       return input;
