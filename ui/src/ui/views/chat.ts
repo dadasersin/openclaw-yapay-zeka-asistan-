@@ -117,6 +117,17 @@ function shouldHandleHistoryNavigation(event: KeyboardEvent, target: HTMLTextAre
   return false;
 }
 
+function restoreHistoryCaret(target: HTMLTextAreaElement, direction: "up" | "down") {
+  requestAnimationFrame(() => {
+    if (document.activeElement !== target) {
+      return;
+    }
+    const caret = direction === "up" ? 0 : target.value.length;
+    target.selectionStart = caret;
+    target.selectionEnd = caret;
+  });
+}
+
 function renderCompactionIndicator(status: CompactionIndicatorStatus | null | undefined) {
   if (!status) {
     return nothing;
@@ -470,6 +481,7 @@ export function renderChat(props: ChatProps) {
                   }
                   if (navigate()) {
                     e.preventDefault();
+                    restoreHistoryCaret(target, e.key === "ArrowUp" ? "up" : "down");
                   }
                   return;
                 }
