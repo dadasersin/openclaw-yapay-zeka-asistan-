@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { listAgentSessionDirs } from "../../commands/cleanup-utils.js";
 import {
   clearSessionStoreCacheForTest,
   loadSessionStore,
@@ -563,5 +564,98 @@ describe("fresh install behavior", () => {
 
     const loaded = loadSessionStore(storePath);
     expect(loaded["agent:main:existing"]?.modelOverride).toBe("updated");
+  });
+});
+
+// ============================================================================
+// Multi-agent migration (gateway startup pattern)
+// ============================================================================
+
+describe("multi-agent migration via listAgentSessionDirs", () => {
+  let fakeStateDir: string;
+
+  beforeEach(async () => {
+    fakeStateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-multi-agent-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(fakeStateDir, { recursive: true, force: true });
+  });
+
+  it("migrates all agent session directories found on disk", async () => {
+    const agentIds = ["main", "dev", "doctor"];
+    const now = Date.now();
+
+    // Create fake agent session dirs with legacy sessions.json
+    for (const id of agentIds) {
+      const sessionsDir = path.join(fakeStateDir, "agents", id, "sessions");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      const store: Record<string, SessionEntry> = {
+        [`agent:${id}:test`]: makeEntry(now),
+      };
+      await fs.writeFile(
+        path.join(sessionsDir, "sessions.json"),
+        JSON.stringify(store, null, 2),
+        "utf-8",
+      );
+    }
+
+    // Scan + migrate (same pattern as server.impl.ts)
+    const sessionDirs = await listAgentSessionDirs(fakeStateDir);
+    expect(sessionDirs).toHaveLength(3);
+
+    for (const sessionsDir of sessionDirs) {
+      const storePath = path.join(sessionsDir, "sessions.json");
+      const migrated = await migrateSessionStoreToDirectory(storePath);
+      expect(migrated).toBe(true);
+    }
+
+    // Verify all agents have sessions.d and no sessions.json
+    for (const id of agentIds) {
+      const sessionsDir = path.join(fakeStateDir, "agents", id, "sessions");
+      const dirStat = await fs.stat(path.join(sessionsDir, "sessions.d"));
+      expect(dirStat.isDirectory()).toBe(true);
+
+      await expect(fs.stat(path.join(sessionsDir, "sessions.json"))).rejects.toThrow();
+
+      const loaded = loadSessionStore(path.join(sessionsDir, "sessions.json"));
+      expect(loaded[`agent:${id}:test`]).toBeDefined();
+    }
+  });
+
+  it("skips already-migrated agents and handles missing sessions gracefully", async () => {
+    const now = Date.now();
+
+    // "main" — already migrated (has sessions.d, no sessions.json)
+    const mainDir = path.join(fakeStateDir, "agents", "main", "sessions");
+    await fs.mkdir(path.join(mainDir, "sessions.d"), { recursive: true });
+
+    // "dev" — has sessions.json to migrate
+    const devDir = path.join(fakeStateDir, "agents", "dev", "sessions");
+    await fs.mkdir(devDir, { recursive: true });
+    await fs.writeFile(
+      path.join(devDir, "sessions.json"),
+      JSON.stringify({ "agent:dev:test": makeEntry(now) }, null, 2),
+      "utf-8",
+    );
+
+    // "research" — agent dir exists but no sessions subdir content
+    await fs.mkdir(path.join(fakeStateDir, "agents", "research"), { recursive: true });
+
+    const sessionDirs = await listAgentSessionDirs(fakeStateDir);
+    expect(sessionDirs).toHaveLength(3);
+
+    const results: boolean[] = [];
+    for (const sessionsDir of sessionDirs) {
+      const storePath = path.join(sessionsDir, "sessions.json");
+      results.push(await migrateSessionStoreToDirectory(storePath));
+    }
+
+    // Only dev should have been migrated
+    expect(results.filter(Boolean)).toHaveLength(1);
+
+    // dev data intact
+    const loaded = loadSessionStore(path.join(devDir, "sessions.json"));
+    expect(loaded["agent:dev:test"]).toBeDefined();
   });
 });
