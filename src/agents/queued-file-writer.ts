@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { appendFileRetry } from "../infra/fs-retry.js";
 
 export type QueuedFileWriter = {
   filePath: string;
@@ -24,7 +25,7 @@ export function getQueuedFileWriter(
     write: (line: string) => {
       queue = queue
         .then(() => ready)
-        .then(() => fs.appendFile(filePath, line, "utf8"))
+        .then(() => appendFileRetry(filePath, line, "utf8"))
         .catch(() => undefined);
     },
   };
