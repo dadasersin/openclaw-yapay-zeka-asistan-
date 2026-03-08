@@ -1,4 +1,4 @@
-export type CronPostToMainMode = "summary" | "full" | "off";
+export type CronPostToMainMode = "summary" | "off";
 
 export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDelivery, TFailureAlert> =
   {
@@ -15,9 +15,10 @@ export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDeliver
     sessionTarget: TSessionTarget;
     wakeMode: TWakeMode;
     /** Controls whether isolated job results are posted to the main session.
-     *  "summary" (default) posts a short summary, "full" is accepted for
-     *  forward-compat but currently behaves the same as "summary",
-     *  "off" suppresses success summaries (errors are still posted). */
+     *  "summary" (default) posts a short summary.
+     *  "off" suppresses success summaries.
+     *  Note: "off" also suppresses error summaries. Use with caution for
+     *  monitoring jobs. */
     postToMainMode?: CronPostToMainMode;
     payload: TPayload;
     delivery?: TDelivery;
