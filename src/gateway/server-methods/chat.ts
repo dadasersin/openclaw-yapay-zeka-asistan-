@@ -987,10 +987,14 @@ export const chatHandlers: GatewayRequestHandlers = {
         mainKey: cfg.session?.mainKey,
         sessionKey,
       });
+      const agentId = resolveSessionAgentId({
+        sessionKey,
+        config: cfg,
+      });
       // Inject timestamp so agents know the current date/time.
       // Only BodyForAgent gets the timestamp — Body stays raw for UI display.
       // See: https://github.com/moltbot/moltbot/issues/3658
-      const stampedMessage = injectTimestamp(parsedMessage, timestampOptsFromConfig(cfg));
+      const stampedMessage = injectTimestamp(parsedMessage, timestampOptsFromConfig(cfg, agentId));
 
       const ctx: MsgContext = {
         Body: parsedMessage,
@@ -1015,10 +1019,6 @@ export const chatHandlers: GatewayRequestHandlers = {
         GatewayClientScopes: client?.connect?.scopes,
       };
 
-      const agentId = resolveSessionAgentId({
-        sessionKey,
-        config: cfg,
-      });
       const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
         cfg,
         agentId,

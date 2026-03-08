@@ -1,7 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../config/config.js";
 
 const loadSessionStoreMock = vi.fn();
 const updateSessionStoreMock = vi.fn();
+const { loadConfigState } = vi.hoisted(() => ({
+  loadConfigState: {
+    value: {
+      session: { mainKey: "main", scope: "per-sender" },
+      agents: {
+        defaults: {
+          model: { primary: "anthropic/claude-opus-4-5" },
+          models: {},
+        },
+      },
+    } as OpenClawConfig,
+  },
+}));
 
 vi.mock("../config/sessions.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config/sessions.js")>();
@@ -26,15 +40,7 @@ vi.mock("../config/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config/config.js")>();
   return {
     ...actual,
-    loadConfig: () => ({
-      session: { mainKey: "main", scope: "per-sender" },
-      agents: {
-        defaults: {
-          model: { primary: "anthropic/claude-opus-4-5" },
-          models: {},
-        },
-      },
-    }),
+    loadConfig: () => loadConfigState.value,
   };
 });
 
@@ -96,6 +102,18 @@ function getSessionStatusTool(agentSessionKey = "main") {
   return tool;
 }
 
+beforeEach(() => {
+  loadConfigState.value = {
+    session: { mainKey: "main", scope: "per-sender" },
+    agents: {
+      defaults: {
+        model: { primary: "anthropic/claude-opus-4-5" },
+        models: {},
+      },
+    },
+  } as OpenClawConfig;
+});
+
 describe("session_status tool", () => {
   it("returns a status card for the current session", async () => {
     resetSessionStore({
@@ -113,6 +131,42 @@ describe("session_status tool", () => {
     expect(details.statusText).toContain("OpenClaw");
     expect(details.statusText).toContain("🧠 Model:");
     expect(details.statusText).not.toContain("OAuth/token status");
+  });
+
+  it("uses the per-agent userTimezone override in the status time line", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-02-16T15:00:00.000Z"));
+      loadConfigState.value = {
+        session: { mainKey: "main", scope: "per-sender" },
+        agents: {
+          defaults: {
+            model: { primary: "anthropic/claude-opus-4-5" },
+            models: {},
+            userTimezone: "America/New_York",
+            timeFormat: "12",
+          },
+          list: [{ id: "support", userTimezone: "America/Los_Angeles" }],
+        },
+      };
+      resetSessionStore({
+        main: {
+          sessionId: "s1",
+          updatedAt: 10,
+        },
+      });
+
+      const tool = getSessionStatusTool("agent:support:main");
+
+      const result = await tool.execute("call-timezone", { sessionKey: "main" });
+      const details = result.details as { ok?: boolean; statusText?: string };
+      expect(details.ok).toBe(true);
+      expect(details.statusText).toContain(
+        "🕒 Time: Monday, February 16th, 2026 — 7:00 AM (America/Los_Angeles)",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("errors for unknown session keys", async () => {

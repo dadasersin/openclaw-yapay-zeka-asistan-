@@ -22,8 +22,8 @@ import {
   resolveAgentIdFromSessionKey,
 } from "../../routing/session-key.js";
 import { applyModelOverrideToSessionEntry } from "../../sessions/model-overrides.js";
-import { resolveAgentDir } from "../agent-scope.js";
-import { formatUserTime, resolveUserTimeFormat, resolveUserTimezone } from "../date-time.js";
+import { resolveAgentDir, resolveAgentUserTimezone } from "../agent-scope.js";
+import { formatUserTime, resolveUserTimeFormat } from "../date-time.js";
 import { resolveModelAuthLabel } from "../model-auth-label.js";
 import { loadModelCatalog } from "../model-catalog.js";
 import {
@@ -341,7 +341,7 @@ export function createSessionStatusTool(opts?: {
         resolved.entry.queueDebounceMs ?? resolved.entry.queueCap ?? resolved.entry.queueDrop,
       );
 
-      const userTimezone = resolveUserTimezone(cfg.agents?.defaults?.userTimezone);
+      const userTimezone = resolveAgentUserTimezone(cfg, agentId);
       const userTimeFormat = resolveUserTimeFormat(cfg.agents?.defaults?.timeFormat);
       const userTime = formatUserTime(new Date(), userTimezone, userTimeFormat);
       const timeLine = userTime

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { z } from "zod";
 import { isSafeExecutableValue } from "../infra/exec-safety.js";
+import { resolveTimezone } from "../infra/format-time/format-datetime.ts";
 import { isValidFileSecretRefId } from "../secrets/ref-contract.js";
 import { MODEL_APIS } from "./types.models.js";
 import { createAllowDenyChannelRulesSchema } from "./zod-schema.allowdeny.js";
@@ -11,6 +12,10 @@ const SECRET_PROVIDER_ALIAS_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 const EXEC_SECRET_REF_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 const WINDOWS_ABS_PATH_PATTERN = /^[A-Za-z]:[\\/]/;
 const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\]+\\[^\\]+/;
+
+export const IanaTimezoneSchema = z
+  .string()
+  .refine((value) => resolveTimezone(value.trim()) !== undefined, "Expected valid IANA timezone.");
 
 function isAbsolutePath(value: string): boolean {
   return (
