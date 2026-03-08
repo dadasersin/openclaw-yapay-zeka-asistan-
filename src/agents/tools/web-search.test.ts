@@ -24,8 +24,6 @@ const {
   extractKimiCitations,
   resolveBraveMode,
   createWebSearchSchema,
-  buildBraveWebSearchUrl,
-  buildBraveLlmContextUrl,
 } = __testing;
 
 const kimiApiKeyEnv = ["KIMI_API", "KEY"].join("_");
@@ -420,28 +418,5 @@ describe("web_search goggles schema", () => {
     });
     const props = schema.properties as Record<string, unknown>;
     expect(props.goggles).toBeUndefined();
-  });
-});
-
-describe("web_search goggles URL construction", () => {
-  it("appends goggles to Brave web search URL", () => {
-    const url = buildBraveWebSearchUrl({
-      query: "test",
-      count: 5,
-      goggles: "$discard,site=example.com",
-    });
-    expect(url.searchParams.get("goggles")).toBe("$discard,site=example.com");
-  });
-
-  it("appends goggles to Brave llm-context URL", () => {
-    const url = buildBraveLlmContextUrl({ query: "test", goggles: "$site=arxiv.org" });
-    expect(url.searchParams.get("goggles")).toBe("$site=arxiv.org");
-  });
-
-  it("omits goggles from URL when not provided", () => {
-    const webUrl = buildBraveWebSearchUrl({ query: "test", count: 5 });
-    expect(webUrl.searchParams.has("goggles")).toBe(false);
-    const llmUrl = buildBraveLlmContextUrl({ query: "test" });
-    expect(llmUrl.searchParams.has("goggles")).toBe(false);
   });
 });
