@@ -497,6 +497,9 @@ export async function runMemoryFlushIfNeeded(params: {
           prompt: resolveMemoryFlushPromptForRun({
             prompt: memoryFlushSettings.prompt,
             cfg: params.cfg,
+            agentId: params.sessionKey
+              ? resolveAgentIdFromSessionKey(params.sessionKey)
+              : undefined,
           }),
           extraSystemPrompt: flushSystemPrompt,
           bootstrapPromptWarningSignaturesSeen,
