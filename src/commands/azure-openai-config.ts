@@ -83,6 +83,16 @@ function buildAzureModelDefinition(modelId: string): ModelDefinitionConfig {
   };
 }
 
+function withAzureStoreCompat(model: ModelDefinitionConfig): ModelDefinitionConfig {
+  return {
+    ...model,
+    compat: {
+      ...model.compat,
+      supportsStore: false,
+    },
+  };
+}
+
 export function applyAzureOpenAIProviderConfig(
   cfg: OpenClawConfig,
   params: { baseUrl: string; modelId: string; apiVersion?: string },
@@ -114,7 +124,7 @@ export function applyAzureOpenAIProviderConfig(
   const existingModels = Array.isArray(existingProvider?.models) ? existingProvider.models : [];
   const defaultModel = buildAzureModelDefinition(modelId);
   const mergedModels = existingModels.some((model) => model.id === modelId)
-    ? existingModels
+    ? existingModels.map((model) => (model.id === modelId ? withAzureStoreCompat(model) : model))
     : [...existingModels, defaultModel];
   const { apiKey: existingApiKey, ...existingProviderRest } = (existingProvider ?? {}) as {
     apiKey?: string;

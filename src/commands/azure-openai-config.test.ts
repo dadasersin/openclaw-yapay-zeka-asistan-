@@ -84,4 +84,38 @@ describe("azure-openai-config", () => {
     );
     expect(cfg.agents?.defaults?.models?.["azure-openai-responses/gpt-4.1"]?.params).toEqual({});
   });
+
+  it("backfills supportsStore=false for existing Azure model entries", () => {
+    const cfg = applyAzureOpenAIConfig(
+      {
+        models: {
+          providers: {
+            "azure-openai-responses": {
+              api: "openai-responses",
+              baseUrl: "https://example.openai.azure.com/openai/v1",
+              models: [
+                {
+                  id: "gpt-4.1",
+                  name: "Existing Azure model",
+                  reasoning: false,
+                  input: ["text"],
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                  contextWindow: 128000,
+                  maxTokens: 4096,
+                },
+              ],
+            },
+          },
+        },
+      },
+      {
+        baseUrl: "https://example.openai.azure.com/openai/v1",
+        modelId: "gpt-4.1",
+      },
+    );
+
+    expect(cfg.models?.providers?.["azure-openai-responses"]?.models?.[0]?.compat).toMatchObject({
+      supportsStore: false,
+    });
+  });
 });
