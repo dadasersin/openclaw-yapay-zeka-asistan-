@@ -240,13 +240,23 @@ export async function migrateSessionStoreToDirectory(storePath: string): Promise
     });
 
     await fs.promises.mkdir(storeDir, { recursive: true });
-    let migratedCount = 0;
+
+    // Deduplicate case-variant keys: multiple legacy keys may normalize to the
+    // same key (e.g. "Foo" and "foo").  Keep the entry with the newest updatedAt.
+    const deduped = new Map<string, SessionEntry>();
     for (const [key, entry] of Object.entries(store)) {
       if (!entry) {
         continue;
       }
-      // Normalize key on write so directory filenames match lookup expectations.
       const normalizedKey = normalizeStoreSessionKey(key);
+      const prev = deduped.get(normalizedKey);
+      if (!prev || (entry.updatedAt ?? 0) > (prev.updatedAt ?? 0)) {
+        deduped.set(normalizedKey, entry);
+      }
+    }
+
+    let migratedCount = 0;
+    for (const [normalizedKey, entry] of deduped) {
       // When merging into an existing directory, skip entries that already exist
       // so we don't clobber newer per-file data with stale JSON values.
       if (dirAlreadyExists) {

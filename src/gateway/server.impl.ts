@@ -349,13 +349,15 @@ export async function startGatewayServer(
       }
     }
     // Fallback: migrate a custom session.store config path (may resolve outside the default agent dirs).
-    try {
-      const configStorePath = resolveStorePath(configSnapshot.config.session?.store);
-      if (await migrateSessionStoreToDirectory(configStorePath)) {
-        log.info(`Migrated custom session store to directory layout: ${configStorePath}`);
+    if (configSnapshot.config.session?.store) {
+      try {
+        const configStorePath = resolveStorePath(configSnapshot.config.session.store);
+        if (await migrateSessionStoreToDirectory(configStorePath)) {
+          log.info(`Migrated custom session store to directory layout: ${configStorePath}`);
+        }
+      } catch (err) {
+        log.warn(`Failed to migrate custom session store path: ${String(err)}`);
       }
-    } catch (err) {
-      log.warn(`Failed to migrate custom session store path: ${String(err)}`);
     }
   }
 

@@ -223,6 +223,44 @@ describe("migration: JSON to directory", () => {
     // New entry from JSON should be migrated
     expect(loaded["agent:main:new-entry"]).toBeDefined();
   });
+
+  it("deduplicates case-variant keys during migration, keeping newest", async () => {
+    const now = Date.now();
+    const newerEntry = makeEntry(now, { modelOverride: "newer" });
+    const olderEntry = makeEntry(now - 5000, { modelOverride: "older" });
+
+    // Legacy JSON has two keys that normalize to the same lowercase key.
+    const legacyStore: Record<string, SessionEntry> = {
+      "Agent:Main:Test": olderEntry,
+      "agent:main:test": newerEntry,
+    };
+    await fs.writeFile(storePath, JSON.stringify(legacyStore, null, 2), "utf-8");
+
+    const migrated = await migrateSessionStoreToDirectory(storePath);
+    expect(migrated).toBe(true);
+
+    const loaded = loadSessionStore(storePath);
+    // Only one entry should exist, and it must be the newer one.
+    expect(Object.keys(loaded)).toHaveLength(1);
+    expect(loaded["agent:main:test"]?.modelOverride).toBe("newer");
+  });
+
+  it("deduplicates case-variant keys keeping stale-wins prevention", async () => {
+    const now = Date.now();
+    // Reverse order: newer key listed first, older listed second.
+    // Without dedup, the older entry (iterated last) would overwrite the newer one.
+    const legacyStore: Record<string, SessionEntry> = {
+      "agent:main:test": makeEntry(now, { modelOverride: "newer" }),
+      "AGENT:MAIN:TEST": makeEntry(now - 10000, { modelOverride: "older" }),
+    };
+    await fs.writeFile(storePath, JSON.stringify(legacyStore, null, 2), "utf-8");
+
+    await migrateSessionStoreToDirectory(storePath);
+
+    const loaded = loadSessionStore(storePath);
+    expect(Object.keys(loaded)).toHaveLength(1);
+    expect(loaded["agent:main:test"]?.modelOverride).toBe("newer");
+  });
 });
 
 // ============================================================================
