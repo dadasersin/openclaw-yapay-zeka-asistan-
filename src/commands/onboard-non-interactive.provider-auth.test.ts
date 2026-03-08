@@ -397,7 +397,7 @@ describe("onboard (non-interactive): provider auth", () => {
       await expect(
         runNonInteractiveOnboardingWithDefaults(runtime, {
           authChoice: "azure-openai-api-key",
-          azureOpenaiApiKey: "azure-test-key",
+          azureOpenaiApiKey: "azure-test-key", // pragma: allowlist secret
           skipSkills: true,
         }),
       ).rejects.toThrow(
@@ -413,7 +413,7 @@ describe("onboard (non-interactive): provider auth", () => {
       await expect(
         runNonInteractiveOnboardingWithDefaults(runtime, {
           authChoice: "azure-openai-api-key",
-          azureOpenaiApiKey: "azure-test-key",
+          azureOpenaiApiKey: "azure-test-key", // pragma: allowlist secret
           azureOpenaiBaseUrl: "https://api.openai.com/v1",
           azureOpenaiModelId: "gpt-4.1",
           skipSkills: true,
@@ -425,7 +425,7 @@ describe("onboard (non-interactive): provider auth", () => {
   it("infers Azure OpenAI auth choice from --azure-openai-api-key and sets default model", async () => {
     await withOnboardEnv("openclaw-onboard-azure-openai-infer-", async (env) => {
       const cfg = await runOnboardingAndReadConfig(env, {
-        azureOpenaiApiKey: "azure-test-key",
+        azureOpenaiApiKey: "azure-test-key", // pragma: allowlist secret
         azureOpenaiBaseUrl: "https://example.openai.azure.com/openai/v1",
         azureOpenaiModelId: "gpt-4.1",
       });
@@ -453,7 +453,7 @@ describe("onboard (non-interactive): provider auth", () => {
     await withOnboardEnv("openclaw-onboard-azure-openai-preview-version-", async (env) => {
       const cfg = await runOnboardingAndReadConfig(env, {
         authChoice: "azure-openai-api-key",
-        azureOpenaiApiKey: "azure-test-key",
+        azureOpenaiApiKey: "azure-test-key", // pragma: allowlist secret
         azureOpenaiBaseUrl: "https://example.openai.azure.com/openai/v1",
         azureOpenaiModelId: "gpt-5.4",
         azureOpenaiApiVersion: "2025-04-01-preview",

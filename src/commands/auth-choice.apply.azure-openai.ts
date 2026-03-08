@@ -67,10 +67,12 @@ export async function applyAuthChoiceAzureOpenAI(
   let nextConfig = params.config;
   let agentModelOverride: string | undefined;
   const noteAgentModel = createAuthChoiceAgentModelNoter(params);
-  const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
+  const requestedSecretInputMode = normalizeSecretInputModeInput(
+    params.opts?.secretInputMode, // pragma: allowlist secret
+  );
 
   if (
-    requestedSecretInputMode === "ref" &&
+    requestedSecretInputMode === "ref" && // pragma: allowlist secret
     params.opts?.azureOpenaiApiKey?.trim() &&
     !process.env.AZURE_OPENAI_API_KEY?.trim()
   ) {
@@ -85,7 +87,7 @@ export async function applyAuthChoiceAzureOpenAI(
   const defaultModelRef = `azure-openai-responses/${modelId}`;
 
   await ensureApiKeyFromOptionEnvOrPrompt({
-    token: params.opts?.azureOpenaiApiKey,
+    token: params.opts?.azureOpenaiApiKey, // pragma: allowlist secret
     tokenProvider: "azure-openai-responses",
     secretInputMode: requestedSecretInputMode,
     config: nextConfig,

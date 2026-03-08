@@ -74,7 +74,7 @@ describe("applyAuthChoiceAzureOpenAI", () => {
 
   it("writes env-backed Azure key as keyRef in ref mode", async () => {
     const agentDir = await setupTempState();
-    process.env.AZURE_OPENAI_API_KEY = "azure-env-key";
+    process.env.AZURE_OPENAI_API_KEY = "azure-env-key"; // pragma: allowlist secret
     const confirm = vi.fn(async () => true);
     const prompter = createWizardPrompter({ confirm }, { defaultSelect: "ref" });
     const runtime = createExitThrowingRuntime();
@@ -116,7 +116,7 @@ describe("applyAuthChoiceAzureOpenAI", () => {
       runtime,
       setDefaultModel: true,
       opts: {
-        azureOpenaiApiKey: "azure-key",
+        azureOpenaiApiKey: "azure-key", // pragma: allowlist secret
         azureOpenaiBaseUrl: "https://example.openai.azure.com/openai/v1",
         azureOpenaiModelId: "gpt-5.4",
         azureOpenaiApiVersion: "2025-04-01-preview",
@@ -143,7 +143,7 @@ describe("applyAuthChoiceAzureOpenAI", () => {
         runtime,
         setDefaultModel: true,
         opts: {
-          azureOpenaiApiKey: "azure-key",
+          azureOpenaiApiKey: "azure-key", // pragma: allowlist secret
           azureOpenaiBaseUrl: "https://api.openai.com/v1",
           azureOpenaiModelId: "gpt-4.1",
         },
@@ -167,7 +167,7 @@ describe("applyAuthChoiceAzureOpenAI", () => {
         runtime,
         setDefaultModel: true,
         opts: {
-          secretInputMode: "ref",
+          secretInputMode: "ref", // pragma: allowlist secret
           azureOpenaiApiKey: "azure-inline-key", // pragma: allowlist secret
           azureOpenaiBaseUrl: "https://example.openai.azure.com",
           azureOpenaiModelId: "gpt-4.1",
