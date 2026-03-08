@@ -70,6 +70,8 @@ export function createOpenClawTools(
     senderIsOwner?: boolean;
     /** Ephemeral session UUID — regenerated on /new and /reset. */
     sessionId?: string;
+    /** Callback invoked when sessions_yield tool is called. */
+    onYield?: (message: string) => void;
   } & SpawnedToolContext,
 ): AnyAgentTool[] {
   const workspaceDir = resolveWorkspaceRoot(options?.workspaceDir);
@@ -170,6 +172,7 @@ export function createOpenClawTools(
     }),
     createSessionsYieldTool({
       sessionId: options?.sessionId,
+      onYield: options?.onYield,
     }),
     createSessionsSpawnTool({
       agentSessionKey: options?.agentSessionKey,
