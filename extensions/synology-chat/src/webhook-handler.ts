@@ -336,7 +336,7 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
     // Default to webhook user_id; may be replaced with Chat API user_id below.
     let replyUserId = payload.user_id;
 
-    // Deliver to agent asynchronously (with 120s timeout to match nginx proxy_read_timeout)
+    // Deliver to agent asynchronously (relies on the core agent timeout)
     try {
       // Resolve the Chat-internal user_id for sending replies.
       // Synology Chat outgoing webhooks use a per-integration user_id that may
