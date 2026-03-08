@@ -1004,7 +1004,8 @@
                   "tools/loop-detection",
                   "tools/reactions",
                   "tools/thinking",
-                  "tools/web"
+                  "tools/web",
+                  "searxng"
                 ]
               },
               {
