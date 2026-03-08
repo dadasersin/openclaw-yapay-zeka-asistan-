@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChannelMessageActionName, ChannelPlugin } from "../../channels/plugins/types.js";
+import * as configModule from "../../config/config.js";
 import type { MessageActionRunResult } from "../../infra/outbound/message-action-runner.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
@@ -119,6 +120,10 @@ describe("message tool agent routing", () => {
 });
 
 describe("message tool path passthrough", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it.each([
     { field: "path", value: "~/Downloads/voice.ogg" },
     { field: "filePath", value: "./tmp/note.m4a" },
@@ -135,6 +140,37 @@ describe("message tool path passthrough", () => {
 
     expect(call?.params?.[field]).toBe(value);
     expect(call?.params?.media).toBeUndefined();
+  });
+
+  it("prefers the active runtime snapshot over the captured tool config", async () => {
+    mockSendResult({ to: "telegram:123" });
+
+    const runtimeCfg = { channels: { telegram: { botToken: "resolved-token" } } } as never;
+    vi.spyOn(configModule, "getRuntimeConfigSnapshot").mockReturnValue(runtimeCfg);
+    const rawCapturedCfg = {
+      channels: {
+        telegram: {
+          botToken: {
+            source: "exec",
+            provider: "opexec",
+            id: "telegram-bot-token",
+          },
+        },
+      },
+    } as never;
+
+    const tool = createMessageTool({
+      config: rawCapturedCfg,
+    });
+
+    await tool.execute("1", {
+      action: "send",
+      target: "telegram:123",
+      message: "hi",
+    });
+
+    const call = mocks.runMessageAction.mock.calls[0]?.[0];
+    expect(call?.cfg).toBe(runtimeCfg);
   });
 });
 

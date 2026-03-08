@@ -13,7 +13,7 @@ import {
   type ChannelMessageActionName,
 } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { loadConfig } from "../../config/config.js";
+import { getRuntimeConfigSnapshot, loadConfig } from "../../config/config.js";
 import { GATEWAY_CLIENT_IDS, GATEWAY_CLIENT_MODES } from "../../gateway/protocol/client-info.js";
 import { getToolResult, runMessageAction } from "../../infra/outbound/message-action-runner.js";
 import { normalizeTargetForProvider } from "../../infra/outbound/target-normalization.js";
@@ -704,7 +704,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         }
       }
 
-      const cfg = options?.config ?? loadConfig();
+      const cfg = getRuntimeConfigSnapshot() ?? options?.config ?? loadConfig();
       const action = readStringParam(params, "action", {
         required: true,
       }) as ChannelMessageActionName;
