@@ -3,6 +3,7 @@ import { extractText } from "./message-extract.ts";
 
 export type ChatInputHistoryState = {
   sessionKey: string;
+  chatLoading: boolean;
   chatMessage: string;
   chatMessages: unknown[];
   chatInputHistorySessionKey: string | null;
@@ -29,6 +30,7 @@ export type ChatInputHistoryKeyResult = {
   preventDefault: boolean;
   restoreCaret: "up" | "down" | null;
   decision:
+    | "blocked:history-loading"
     | "blocked:modifier-or-composition"
     | "blocked:selection-range"
     | "blocked:arrowup-not-at-start"
@@ -141,6 +143,16 @@ export function handleChatInputHistoryKey(
     selectionEnd: input.selectionEnd,
     valueLength: input.valueLength,
   };
+
+  if (state.chatLoading) {
+    return {
+      ...baseResult,
+      handled: false,
+      preventDefault: false,
+      restoreCaret: null,
+      decision: "blocked:history-loading",
+    };
+  }
 
   if (
     input.altKey ||
