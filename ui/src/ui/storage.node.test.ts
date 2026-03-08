@@ -66,8 +66,10 @@ describe("loadSettings default gateway URL derivation", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("localStorage", createStorageMock());
+    vi.stubGlobal("sessionStorage", createStorageMock());
     vi.stubGlobal("navigator", { language: "en-US" } as Navigator);
     localStorage.clear();
+    sessionStorage.clear();
     setControlUiBasePath(undefined);
   });
 
@@ -100,7 +102,7 @@ describe("loadSettings default gateway URL derivation", () => {
     expect(loadSettings().gatewayUrl).toBe(expectedGatewayUrl("/apps/openclaw"));
   });
 
-  it("ignores and scrubs legacy persisted tokens", async () => {
+  it("ignores legacy localStorage tokens and prefers session token storage", async () => {
     setTestLocation({
       protocol: "https:",
       host: "gateway.example:8443",
@@ -115,10 +117,12 @@ describe("loadSettings default gateway URL derivation", () => {
       }),
     );
 
+    sessionStorage.setItem("openclaw.control.session-token.v1", "session-token");
+
     const { loadSettings } = await import("./storage.ts");
     expect(loadSettings()).toMatchObject({
       gatewayUrl: "wss://gateway.example:8443/openclaw",
-      token: "",
+      token: "session-token",
       sessionKey: "agent",
     });
     expect(JSON.parse(localStorage.getItem("openclaw.control.settings.v1") ?? "{}")).toEqual({
@@ -134,7 +138,7 @@ describe("loadSettings default gateway URL derivation", () => {
     });
   });
 
-  it("does not persist gateway tokens when saving settings", async () => {
+  it("persists gateway tokens in sessionStorage only when saving settings", async () => {
     setTestLocation({
       protocol: "https:",
       host: "gateway.example:8443",
@@ -166,5 +170,6 @@ describe("loadSettings default gateway URL derivation", () => {
       navCollapsed: false,
       navGroupsCollapsed: {},
     });
+    expect(sessionStorage.getItem("openclaw.control.session-token.v1")).toBe("memory-only-token");
   });
 });
