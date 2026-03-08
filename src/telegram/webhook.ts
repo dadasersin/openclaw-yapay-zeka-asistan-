@@ -127,14 +127,15 @@ export async function startTelegramWebhook(opts: {
   for (const entry of pending) {
     try {
       await bot.handleUpdate(entry.payload as Parameters<typeof bot.handleUpdate>[0]);
+      // Dequeue happens via onUpdateProcessed in the bot middleware on success.
+      // Fallback dequeue in case middleware path didn't fire.
+      await dequeueWebhook("telegram", entry.deduplicationId, opts.stateDir).catch(() => {});
     } catch (err) {
       runtime.log?.(
         `webhook replay failed for update ${entry.deduplicationId}: ${formatErrorMessage(err)}`,
       );
+      // Leave entry on disk — will be retried on next restart (1h TTL cleanup).
     }
-    // Dequeue happens via onUpdateProcessed in the bot middleware.
-    // If handleUpdate threw before middleware ran, dequeue manually.
-    await dequeueWebhook("telegram", entry.deduplicationId, opts.stateDir).catch(() => {});
   }
   if (pending.length > 0) {
     runtime.log?.(`webhook queue: replayed ${pending.length} pending update(s)`);

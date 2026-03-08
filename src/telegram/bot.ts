@@ -182,6 +182,9 @@ export function createTelegramBot(opts: TelegramBotOptions) {
     }
     try {
       await next();
+      if (typeof updateId === "number") {
+        opts.onUpdateProcessed?.(updateId);
+      }
     } finally {
       if (typeof updateId === "number") {
         pendingUpdateIds.delete(updateId);
@@ -189,7 +192,6 @@ export function createTelegramBot(opts: TelegramBotOptions) {
           highestCompletedUpdateId = updateId;
         }
         maybePersistSafeWatermark();
-        opts.onUpdateProcessed?.(updateId);
       }
     }
   });
