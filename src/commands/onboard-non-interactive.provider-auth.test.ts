@@ -361,7 +361,7 @@ describe("onboard (non-interactive): provider auth", () => {
     await withOnboardEnv("openclaw-onboard-azure-openai-", async (env) => {
       const cfg = await runOnboardingAndReadConfig(env, {
         authChoice: "azure-openai-api-key",
-        azureOpenaiApiKey: "azure-test-key",
+        azureOpenaiApiKey: "azure-test-key", // pragma: allowlist secret
         azureOpenaiBaseUrl: "https://example.openai.azure.com",
         azureOpenaiModelId: "gpt-5.4",
         azureOpenaiApiVersion: "2025-04-01-preview",

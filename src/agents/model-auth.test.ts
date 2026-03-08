@@ -99,7 +99,7 @@ describe("resolveModelAuthMode", () => {
 describe("resolveEnvApiKey", () => {
   it("resolves AZURE_OPENAI_API_KEY for azure-openai-responses", () => {
     const previous = process.env.AZURE_OPENAI_API_KEY;
-    process.env.AZURE_OPENAI_API_KEY = "azure-from-env";
+    process.env.AZURE_OPENAI_API_KEY = "azure-from-env"; // pragma: allowlist secret
     try {
       expect(resolveEnvApiKey("azure-openai-responses")?.apiKey).toBe("azure-from-env");
     } finally {

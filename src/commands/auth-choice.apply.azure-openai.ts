@@ -69,6 +69,16 @@ export async function applyAuthChoiceAzureOpenAI(
   const noteAgentModel = createAuthChoiceAgentModelNoter(params);
   const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
 
+  if (
+    requestedSecretInputMode === "ref" &&
+    params.opts?.azureOpenaiApiKey?.trim() &&
+    !process.env.AZURE_OPENAI_API_KEY?.trim()
+  ) {
+    throw new Error(
+      "--azure-openai-api-key cannot be used with --secret-input-mode ref unless AZURE_OPENAI_API_KEY is set in env.",
+    );
+  }
+
   const baseUrl = await resolveAzureOpenAIBaseUrl(params);
   const modelId = await resolveAzureOpenAIModelId(params);
   const apiVersion = params.opts?.azureOpenaiApiVersion?.trim() || undefined;

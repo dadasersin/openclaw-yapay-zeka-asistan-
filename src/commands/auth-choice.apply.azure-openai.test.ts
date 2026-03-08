@@ -40,7 +40,7 @@ describe("applyAuthChoiceAzureOpenAI", () => {
       runtime,
       setDefaultModel: true,
       opts: {
-        azureOpenaiApiKey: "azure-key",
+        azureOpenaiApiKey: "azure-key", // pragma: allowlist secret
         azureOpenaiBaseUrl: "https://example.openai.azure.com",
         azureOpenaiModelId: "gpt-5.4",
         azureOpenaiApiVersion: "2025-04-01-preview",
@@ -149,6 +149,33 @@ describe("applyAuthChoiceAzureOpenAI", () => {
         },
       }),
     ).rejects.toThrow(/Azure OpenAI base URL must use an Azure host/);
+
+    await expect(fs.access(authProfilePathForAgent(agentDir))).rejects.toBeDefined();
+  });
+
+  it("rejects inline Azure key in ref mode when AZURE_OPENAI_API_KEY is missing", async () => {
+    const agentDir = await setupTempState();
+    delete process.env.AZURE_OPENAI_API_KEY;
+    const prompter = createWizardPrompter({}, { defaultSelect: "" });
+    const runtime = createExitThrowingRuntime();
+
+    await expect(
+      applyAuthChoiceAzureOpenAI({
+        authChoice: "azure-openai-api-key",
+        config: {},
+        prompter,
+        runtime,
+        setDefaultModel: true,
+        opts: {
+          secretInputMode: "ref",
+          azureOpenaiApiKey: "azure-inline-key", // pragma: allowlist secret
+          azureOpenaiBaseUrl: "https://example.openai.azure.com",
+          azureOpenaiModelId: "gpt-4.1",
+        },
+      }),
+    ).rejects.toThrow(
+      /--azure-openai-api-key cannot be used with --secret-input-mode ref unless AZURE_OPENAI_API_KEY is set in env/i,
+    );
 
     await expect(fs.access(authProfilePathForAgent(agentDir))).rejects.toBeDefined();
   });
