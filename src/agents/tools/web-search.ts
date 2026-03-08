@@ -159,11 +159,11 @@ function createWebSearchSchema(params: {
     count: Type.Optional(
       Type.Number({
         description:
-          provider === "exa"
+          params.provider === "exa"
             ? "Number of results to return (1-100)."
             : "Number of results to return (1-10).",
         minimum: 1,
-        maximum: provider === "exa" ? MAX_EXA_SEARCH_COUNT : MAX_SEARCH_COUNT,
+        maximum: params.provider === "exa" ? MAX_EXA_SEARCH_COUNT : MAX_SEARCH_COUNT,
       }),
     ),
   } as const;
