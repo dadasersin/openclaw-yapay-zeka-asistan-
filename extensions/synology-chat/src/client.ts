@@ -171,7 +171,7 @@ async function sendSingleDm(
 export async function sendToChannel(
   channelIncomingUrl: string,
   text: string,
-  allowInsecureSsl = false,
+  allowInsecureSsl = true,
 ): Promise<boolean> {
   const chunks = splitTextForSynology(text);
   for (const chunk of chunks) {

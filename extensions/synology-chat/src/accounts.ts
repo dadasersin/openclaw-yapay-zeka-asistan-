@@ -77,9 +77,16 @@ export function listAccountIds(cfg: any): string[] {
 
   const ids = new Set<string>();
 
-  // If base config has a token, there's a "default" account
+  // If base config has a bot token, channel tokens, or channel webhooks,
+  // there's a "default" account (supports channel-only setups without bot token)
   const hasBaseToken = channelCfg.token || process.env.SYNOLOGY_CHAT_TOKEN;
-  if (hasBaseToken) {
+  const hasChannelTokens =
+    Object.keys(channelCfg.channelTokens ?? {}).length > 0 ||
+    Object.keys(parseChannelTokensFromEnv()).length > 0;
+  const hasChannelWebhooks =
+    Object.keys(channelCfg.channelWebhooks ?? {}).length > 0 ||
+    Object.keys(parseChannelWebhooksFromEnv()).length > 0;
+  if (hasBaseToken || hasChannelTokens || hasChannelWebhooks) {
     ids.add("default");
   }
 

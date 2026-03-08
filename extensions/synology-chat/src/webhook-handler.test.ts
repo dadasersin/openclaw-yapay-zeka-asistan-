@@ -465,7 +465,6 @@ describe("createWebhookHandler", () => {
     expect(deliver).toHaveBeenCalledWith(
       expect.objectContaining({
         chatType: "group",
-        channelId: "42",
         sessionKey: "synology-chat:group:42",
       }),
     );

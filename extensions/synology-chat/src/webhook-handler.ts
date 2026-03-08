@@ -319,6 +319,7 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
     const channelId = isGroup ? tokenMatch.channelId : undefined;
 
     // Access control: DM policy for DMs, group policy for channels
+    let commandAuthorized = false;
     if (isGroup) {
       if (account.groupPolicy === "disabled") {
         respondJson(res, 403, { error: "Group messaging is disabled" });
@@ -339,6 +340,7 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
         }
       }
       // groupPolicy === "open" — allow through
+      commandAuthorized = true;
     } else {
       const auth = authorizeUserForDm(payload.user_id, account.dmPolicy, account.allowedUserIds);
       if (!auth.allowed) {
@@ -357,6 +359,7 @@ export function createWebhookHandler(deps: WebhookHandlerDeps) {
         respondJson(res, 403, { error: "User not authorized" });
         return;
       }
+      commandAuthorized = auth.allowed;
     }
 
     // Rate limit

@@ -138,12 +138,16 @@ export function createSynologyChatPlugin() {
       },
       collectWarnings: ({ account }: { account: ResolvedSynologyChatAccount }) => {
         const warnings: string[] = [];
-        if (!account.token) {
+        const hasChannelTokens = Object.keys(account.channelTokens ?? {}).length > 0;
+        const hasChannelWebhooks = Object.keys(account.channelWebhooks ?? {}).length > 0;
+        // Only warn about missing bot token/incomingUrl if there are no channel tokens
+        // (channel-only setups are valid without a bot token)
+        if (!account.token && !hasChannelTokens) {
           warnings.push(
             "- Synology Chat: token is not configured. The webhook will reject all requests.",
           );
         }
-        if (!account.incomingUrl) {
+        if (!account.incomingUrl && !hasChannelTokens) {
           warnings.push(
             "- Synology Chat: incomingUrl is not configured. The bot cannot send replies.",
           );
@@ -168,8 +172,6 @@ export function createSynologyChatPlugin() {
             '- Synology Chat: groupPolicy="open" allows any user to interact in group channels. Consider "allowlist" for production use.',
           );
         }
-        const hasChannelTokens = Object.keys(account.channelTokens ?? {}).length > 0;
-        const hasChannelWebhooks = Object.keys(account.channelWebhooks ?? {}).length > 0;
         if (hasChannelTokens && !hasChannelWebhooks) {
           warnings.push(
             "- Synology Chat: channelTokens configured but no channelWebhooks — the bot can receive group messages but cannot reply.",

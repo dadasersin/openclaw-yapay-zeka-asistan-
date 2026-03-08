@@ -112,6 +112,10 @@ describe("createSynologyChatPlugin", () => {
         rateLimitPerMinute: 30,
         botName: "Bot",
         allowInsecureSsl: true,
+        channelTokens: {},
+        channelWebhooks: {},
+        groupPolicy: "open" as const,
+        groupAllowFrom: [],
       };
       const result = plugin.security.resolveDmPolicy({ cfg: {}, account });
       expect(result.policy).toBe("allowlist");
@@ -146,6 +150,10 @@ describe("createSynologyChatPlugin", () => {
         rateLimitPerMinute: 30,
         botName: "Bot",
         allowInsecureSsl: false,
+        channelTokens: {},
+        channelWebhooks: {},
+        groupPolicy: "open" as const,
+        groupAllowFrom: [],
       };
       const warnings = plugin.security.collectWarnings({ account });
       expect(warnings.some((w: string) => w.includes("token"))).toBe(true);
@@ -165,6 +173,10 @@ describe("createSynologyChatPlugin", () => {
         rateLimitPerMinute: 30,
         botName: "Bot",
         allowInsecureSsl: true,
+        channelTokens: {},
+        channelWebhooks: {},
+        groupPolicy: "open" as const,
+        groupAllowFrom: [],
       };
       const warnings = plugin.security.collectWarnings({ account });
       expect(warnings.some((w: string) => w.includes("SSL"))).toBe(true);
@@ -184,6 +196,10 @@ describe("createSynologyChatPlugin", () => {
         rateLimitPerMinute: 30,
         botName: "Bot",
         allowInsecureSsl: false,
+        channelTokens: {},
+        channelWebhooks: {},
+        groupPolicy: "open" as const,
+        groupAllowFrom: [],
       };
       const warnings = plugin.security.collectWarnings({ account });
       expect(warnings.some((w: string) => w.includes("open"))).toBe(true);
@@ -203,6 +219,10 @@ describe("createSynologyChatPlugin", () => {
         rateLimitPerMinute: 30,
         botName: "Bot",
         allowInsecureSsl: false,
+        channelTokens: {},
+        channelWebhooks: {},
+        groupPolicy: "open" as const,
+        groupAllowFrom: [],
       };
       const warnings = plugin.security.collectWarnings({ account });
       expect(warnings.some((w: string) => w.includes("empty allowedUserIds"))).toBe(true);
