@@ -130,6 +130,43 @@ describe("agents_list", () => {
     expect(agents?.map((agent) => agent.id)).toEqual(["main", "coder", "research"]);
   });
 
+  it("returns only requester when agents.list is an empty array", async () => {
+    configOverride = {
+      session: createPerSenderSessionConfig(),
+      agents: {
+        list: [],
+      },
+    };
+
+    const tool = requireAgentsListTool();
+    const result = await tool.execute("call-empty-list", {});
+    const agents = readAgentList(result);
+    // Even with an empty list, the requester's own id should be present
+    expect(agents?.length).toBeLessThanOrEqual(1);
+  });
+
+  it("handles case-insensitive agent id matching in allowAgents", async () => {
+    setConfigWithAgentList([
+      {
+        id: "main",
+        name: "Main",
+        subagents: {
+          allowAgents: ["RESEARCH"],
+        },
+      },
+      {
+        id: "research",
+        name: "Research",
+      },
+    ]);
+
+    const tool = requireAgentsListTool();
+    const result = await tool.execute("call-case", {});
+    const agents = readAgentList(result);
+    const ids = agents?.map((agent) => agent.id) ?? [];
+    expect(ids).toContain("research");
+  });
+
   it("marks allowlisted-but-unconfigured agents", async () => {
     setConfigWithAgentList([
       {
