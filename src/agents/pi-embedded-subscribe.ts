@@ -281,6 +281,20 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
       usage.total ??
       (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
     usageTotals.total += usageTotal;
+
+    // Emit a live usage event so the TUI footer updates after each LLM response.
+    // This must fire before agent_end / lifecycle "end" so the TUI receives it
+    // while the run is still active.
+    const promptTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+    emitAgentEvent({
+      runId: params.runId,
+      stream: "usage",
+      data: {
+        totalTokens: promptTokens,
+        inputTokens: usageTotals.input,
+        outputTokens: usageTotals.output,
+      },
+    });
   };
   const getUsageTotals = () => {
     const hasUsage =

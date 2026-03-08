@@ -322,6 +322,7 @@ export async function runTui(opts: TuiOptions) {
   const autoMessage = opts.message?.trim();
   let autoMessageSent = false;
   let sessionInfo: SessionInfo = {};
+  let liveUsageUpdatedAt = 0;
   let lastCtrlCAt = 0;
   let exitRequested = false;
   let activityStatus = "idle";
@@ -391,6 +392,9 @@ export async function runTui(opts: TuiOptions) {
     },
     set sessionInfo(value) {
       sessionInfo = value;
+    },
+    get liveUsageUpdatedAt() {
+      return liveUsageUpdatedAt;
     },
     get initialSessionApplied() {
       return initialSessionApplied;
@@ -799,6 +803,7 @@ export async function runTui(opts: TuiOptions) {
       if (typeof data.outputTokens === "number") {
         sessionInfo.outputTokens = data.outputTokens;
       }
+      liveUsageUpdatedAt = Date.now();
       updateFooter();
     },
   });

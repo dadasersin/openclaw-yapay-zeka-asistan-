@@ -174,14 +174,19 @@ export function createSessionActions(context: SessionActionContext) {
     if (entry?.responseUsage !== undefined) {
       next.responseUsage = entry.responseUsage;
     }
-    if (entry?.inputTokens !== undefined) {
-      next.inputTokens = entry.inputTokens;
-    }
-    if (entry?.outputTokens !== undefined) {
-      next.outputTokens = entry.outputTokens;
-    }
-    if (entry?.totalTokens !== undefined) {
-      next.totalTokens = entry.totalTokens;
+    // Skip overwriting token data when a live usage event was received recently,
+    // since the server may not have persisted the latest usage yet.
+    const hasRecentLiveUsage = Date.now() - state.liveUsageUpdatedAt < 5_000;
+    if (!hasRecentLiveUsage) {
+      if (entry?.inputTokens !== undefined) {
+        next.inputTokens = entry.inputTokens;
+      }
+      if (entry?.outputTokens !== undefined) {
+        next.outputTokens = entry.outputTokens;
+      }
+      if (entry?.totalTokens !== undefined) {
+        next.totalTokens = entry.totalTokens;
+      }
     }
     if (entry?.contextTokens !== undefined || defaults?.contextTokens !== undefined) {
       next.contextTokens =
