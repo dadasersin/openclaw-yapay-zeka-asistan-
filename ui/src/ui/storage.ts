@@ -36,7 +36,7 @@ export function loadSettings(): UiSettings {
 
   const defaults: UiSettings = {
     gatewayUrl: defaultUrl,
-    token: "",
+    token: loadSessionToken() ?? "",
     sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "system",

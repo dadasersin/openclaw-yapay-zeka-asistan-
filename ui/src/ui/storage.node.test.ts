@@ -138,6 +138,21 @@ describe("loadSettings default gateway URL derivation", () => {
     });
   });
 
+  it("loads session token even when localStorage settings are missing", async () => {
+    setTestLocation({
+      protocol: "https:",
+      host: "gateway.example:8443",
+      pathname: "/",
+    });
+    sessionStorage.setItem("openclaw.control.session-token.v1", "session-token");
+
+    const { loadSettings } = await import("./storage.ts");
+    expect(loadSettings()).toMatchObject({
+      token: "session-token",
+      sessionKey: "main",
+    });
+  });
+
   it("persists gateway tokens in sessionStorage only when saving settings", async () => {
     setTestLocation({
       protocol: "https:",
