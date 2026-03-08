@@ -73,7 +73,10 @@ function resolveFeishuThreadRootMessageId(ctx: FeishuMessageContext): string | u
   if (ctx.rootId?.trim()) {
     return ctx.rootId.trim();
   }
-  if (ctx.threadId?.trim()) {
+  // Root messages in Feishu topics can arrive without root_id. Follow-up
+  // replies without root_id must not fall back to their own message id,
+  // or the derived thread key will drift on every turn.
+  if (ctx.threadId?.trim() && !ctx.parentId?.trim()) {
     return ctx.messageId.trim();
   }
   return undefined;
@@ -1213,13 +1216,15 @@ export async function handleFeishuMessage(params: {
       chatId: ctx.chatId,
       rootMessageId: threadRootMessageId,
     });
-    if (threadConversationId) {
+    if (threadConversationId || ctx.threadId?.trim()) {
       const resolveThreadBinding = () =>
-        getSessionBindingService().resolveByConversation({
-          channel: "feishu",
-          accountId: account.accountId,
-          conversationId: threadConversationId,
-        }) ??
+        (threadConversationId
+          ? getSessionBindingService().resolveByConversation({
+              channel: "feishu",
+              accountId: account.accountId,
+              conversationId: threadConversationId,
+            })
+          : null) ??
         (ctx.threadId?.trim()
           ? resolveFeishuThreadBindingByNativeThread({
               accountId: account.accountId,

@@ -173,6 +173,16 @@ function removeBindingRecord(record: FeishuThreadBindingRecord): void {
   );
 }
 
+function clearBindingsForAccount(accountId: string): void {
+  for (const [key, record] of BINDINGS_BY_ACCOUNT_CONVERSATION.entries()) {
+    if (record.accountId !== accountId) {
+      continue;
+    }
+    clearNativeThreadAliasForRecord(record);
+    BINDINGS_BY_ACCOUNT_CONVERSATION.delete(key);
+  }
+}
+
 function toSessionBindingTargetKind(raw: FeishuBindingTargetKind): BindingTargetKind {
   return raw === "subagent" ? "subagent" : "session";
 }
@@ -620,6 +630,7 @@ export function createFeishuThreadBindingManager(
         sweepTimer = null;
       }
       unregisterSessionBindingAdapter({ channel: "feishu", accountId });
+      clearBindingsForAccount(accountId);
       const existingManager = MANAGERS_BY_ACCOUNT_ID.get(accountId);
       if (existingManager === manager) {
         MANAGERS_BY_ACCOUNT_ID.delete(accountId);
@@ -653,6 +664,9 @@ export function createFeishuThreadBindingManager(
               : "";
         const sourceMessageId = normalizeConversationId(sourceMessageIdRaw);
         if (!parentConversationId || !sourceMessageId) {
+          console.warn(
+            `feishu thread bindings: child placement requires parent conversation and source message id (account=${accountId})`,
+          );
           return null;
         }
         conversationId = buildFeishuThreadConversationId({

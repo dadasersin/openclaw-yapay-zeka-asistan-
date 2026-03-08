@@ -1,8 +1,9 @@
+import fsPromises from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ClawdbotConfig } from "openclaw/plugin-sdk/feishu";
 import { getSessionBindingService } from "openclaw/plugin-sdk/feishu";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __testing,
   createFeishuThreadBindingManager,
@@ -139,29 +140,107 @@ describe("feishu thread bindings", () => {
     ).toBe("oc_chat_3:thread:om_root_3");
   });
 
-  it("persists bindings under the Feishu state directory", async () => {
+  it("clears in-memory bindings when a manager stops without persistence", async () => {
+    createFeishuThreadBindingManager({
+      accountId: "default",
+      persist: false,
+      enableSweeper: false,
+    });
+
+    await getSessionBindingService().bind({
+      targetSessionKey: "agent:codex:acp:s4",
+      targetKind: "session",
+      conversation: {
+        channel: "feishu",
+        accountId: "default",
+        conversationId: "oc_chat_4:thread:om_root_4",
+      },
+      placement: "current",
+      metadata: {
+        nativeThreadId: "omt_thread_4",
+      },
+    });
+
+    stopFeishuThreadBindingManager("default");
+
+    expect(
+      getSessionBindingService().resolveByConversation({
+        channel: "feishu",
+        accountId: "default",
+        conversationId: "oc_chat_4:thread:om_root_4",
+      }),
+    ).toBeNull();
+    expect(
+      resolveFeishuThreadBindingByNativeThread({
+        accountId: "default",
+        chatId: "oc_chat_4",
+        nativeThreadId: "omt_thread_4",
+      }),
+    ).toBeNull();
+  });
+
+  it("logs a diagnostic when child placement is missing the trigger message id", async () => {
+    createFeishuThreadBindingManager({
+      accountId: "default",
+      persist: false,
+      enableSweeper: false,
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(
+        getSessionBindingService().bind({
+          targetSessionKey: "agent:codex:acp:s5",
+          targetKind: "session",
+          conversation: {
+            channel: "feishu",
+            accountId: "default",
+            conversationId: "oc_chat_parent_5",
+          },
+          placement: "child",
+          metadata: {},
+        }),
+      ).rejects.toThrow("Session binding adapter failed to bind target conversation");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "child placement requires parent conversation and source message id",
+        ),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("loads persisted bindings from the Feishu state directory", async () => {
     const homeDir = await fsMkdtemp();
     const previousHome = process.env.HOME;
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
     process.env.HOME = homeDir;
+    process.env.OPENCLAW_STATE_DIR = path.join(homeDir, ".openclaw");
     try {
-      createFeishuThreadBindingManager({
-        accountId: "work",
-        persist: true,
-        enableSweeper: false,
-      });
+      const bindingsPath = path.join(
+        process.env.OPENCLAW_STATE_DIR,
+        "feishu",
+        "thread-bindings-work.json",
+      );
+      await fsPromises.mkdir(path.dirname(bindingsPath), { recursive: true });
+      await fsPromises.writeFile(
+        bindingsPath,
+        JSON.stringify({
+          version: 1,
+          bindings: [
+            {
+              accountId: "work",
+              conversationId: "oc_chat_2:thread:om_root_2",
+              targetKind: "acp",
+              targetSessionKey: "agent:codex:acp:s2",
+              boundAt: 1,
+              lastActivityAt: 1,
+            },
+          ],
+        }),
+      );
 
-      await getSessionBindingService().bind({
-        targetSessionKey: "agent:codex:acp:s2",
-        targetKind: "session",
-        conversation: {
-          channel: "feishu",
-          accountId: "work",
-          conversationId: "oc_chat_2:thread:om_root_2",
-        },
-        placement: "current",
-      });
-
-      stopFeishuThreadBindingManager("work");
       createFeishuThreadBindingManager({
         accountId: "work",
         persist: true,
@@ -177,6 +256,7 @@ describe("feishu thread bindings", () => {
       ).toBe("agent:codex:acp:s2");
     } finally {
       process.env.HOME = previousHome;
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
       __testing.resetFeishuThreadBindingsForTests();
     }
   });

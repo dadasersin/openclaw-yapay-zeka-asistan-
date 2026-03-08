@@ -587,6 +587,58 @@ describe("spawnAcpDirect", () => {
     expect(agentCall?.params?.threadId).toBeUndefined();
   });
 
+  it("treats thread-scoped Feishu conversation ids as current placement even without threadId", async () => {
+    hoisted.sessionBindingCapabilitiesMock.mockReturnValue({
+      adapterAvailable: true,
+      bindSupported: true,
+      unbindSupported: true,
+      placements: ["current", "child"] as const,
+    });
+    hoisted.sessionBindingBindMock.mockImplementation(
+      async (input: {
+        targetSessionKey: string;
+        conversation: { accountId: string; conversationId: string };
+        metadata?: Record<string, unknown>;
+      }) =>
+        createSessionBinding({
+          targetSessionKey: input.targetSessionKey,
+          conversation: {
+            channel: "feishu",
+            accountId: input.conversation.accountId,
+            conversationId: input.conversation.conversationId,
+          },
+          metadata: input.metadata,
+        }),
+    );
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Keep using the existing Feishu topic",
+        agentId: "codex",
+        mode: "session",
+        thread: true,
+      },
+      {
+        agentSessionKey: "agent:main:main",
+        agentChannel: "feishu",
+        agentAccountId: "default",
+        agentTo: "user:ou_requester",
+        agentConversationId: "oc_dm_chat:thread:om_seed_77",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(hoisted.sessionBindingBindMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        placement: "current",
+        conversation: expect.objectContaining({
+          channel: "feishu",
+          conversationId: "oc_dm_chat:thread:om_seed_77",
+        }),
+      }),
+    );
+  });
+
   it("rejects thread-bound Feishu ACP spawn when spawnAcpSessions is disabled", async () => {
     hoisted.state.cfg = {
       ...hoisted.state.cfg,

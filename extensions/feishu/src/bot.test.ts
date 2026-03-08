@@ -1868,6 +1868,63 @@ describe("handleFeishuMessage command authorization", () => {
     );
   });
 
+  it("does not derive a per-message thread root for thread-only follow-ups", async () => {
+    mockShouldComputeCommandAuthorized.mockReturnValue(false);
+
+    const cfg: ClawdbotConfig = {
+      channels: {
+        feishu: {
+          dmPolicy: "open",
+        },
+      },
+    } as ClawdbotConfig;
+
+    ensureFeishuThreadBindingManagerForAccount({
+      cfg,
+      accountId: "default",
+      persist: false,
+      enableSweeper: false,
+    });
+    await getSessionBindingService().bind({
+      targetSessionKey: "agent:codex:acp:test-bound-session",
+      targetKind: "session",
+      conversation: {
+        channel: "feishu",
+        accountId: "default",
+        conversationId: "oc-dm-thread:thread:om_dm_topic_root",
+      },
+      placement: "current",
+      metadata: {
+        agentId: "codex",
+        nativeThreadId: "omt_dm_topic_2",
+      },
+    });
+
+    const event: FeishuMessageEvent = {
+      sender: { sender_id: { open_id: "ou-dm-thread" } },
+      message: {
+        message_id: "msg-dm-thread-followup-3",
+        chat_id: "oc-dm-thread",
+        chat_type: "p2p",
+        thread_id: "omt_dm_topic_2",
+        parent_id: "om_reply_1",
+        message_type: "text",
+        content: JSON.stringify({ text: "继续第三条" }),
+      },
+    };
+
+    await dispatchMessage({ cfg, event });
+
+    expect(mockFinalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        SessionKey: "agent:codex:acp:test-bound-session",
+        MessageThreadId: undefined,
+        RootMessageId: undefined,
+        NativeChannelId: "oc-dm-thread",
+      }),
+    );
+  });
+
   it("rehydrates missing thread bindings at most once within the cooldown window", async () => {
     mockShouldComputeCommandAuthorized.mockReturnValue(false);
 

@@ -231,6 +231,10 @@ function resolveConversationIdForThreadBinding(params: {
   });
 }
 
+function isThreadScopedConversationId(conversationId?: string): boolean {
+  return typeof conversationId === "string" && conversationId.includes(":thread:");
+}
+
 function prepareAcpThreadBinding(params: {
   cfg: OpenClawConfig;
   channel?: string;
@@ -297,7 +301,11 @@ function prepareAcpThreadBinding(params: {
     threadId: params.threadId,
   });
   const placement: "current" | "child" =
-    params.threadId != null || !capabilities.placements.includes("child") ? "current" : "child";
+    params.threadId != null ||
+    isThreadScopedConversationId(conversationId) ||
+    !capabilities.placements.includes("child")
+      ? "current"
+      : "child";
   if (!capabilities.placements.includes(placement)) {
     return {
       ok: false,
