@@ -225,6 +225,7 @@ export function registerBrowserAgentActRoutes(
               targetId: tab.targetId,
               width,
               height,
+              signal: req.signal,
             });
             return res.json({ ok: true, targetId: tab.targetId, url: tab.url });
           }
@@ -319,7 +320,11 @@ export function registerBrowserAgentActRoutes(
             });
           }
           case "close": {
-            await pw.closePageViaPlaywright({ cdpUrl, targetId: tab.targetId });
+            await pw.closePageViaPlaywright({
+              cdpUrl,
+              targetId: tab.targetId,
+              signal: req.signal,
+            });
             return res.json({ ok: true, targetId: tab.targetId });
           }
           default: {
