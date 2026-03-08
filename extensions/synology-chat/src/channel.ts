@@ -295,12 +295,18 @@ export function createSynologyChatPlugin() {
                 deliver: async (payload: { text?: string; body?: string }) => {
                   const text = payload?.text ?? payload?.body;
                   if (text) {
-                    await sendMessage(
-                      account.incomingUrl,
-                      text,
-                      sendUserId,
-                      account.allowInsecureSsl,
-                    );
+                    // The outbound chunker is only used for proactive sends, not
+                    // reply dispatching.  Chunk here to respect Synology Chat's
+                    // message-size limit (~2 000 chars).
+                    const chunks = chunkTextForSynology(text, 2000);
+                    for (const chunk of chunks) {
+                      await sendMessage(
+                        account.incomingUrl,
+                        chunk,
+                        sendUserId,
+                        account.allowInsecureSsl,
+                      );
+                    }
                   }
                 },
                 onReplyStart: () => {
