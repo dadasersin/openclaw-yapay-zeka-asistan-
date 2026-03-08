@@ -15,14 +15,8 @@ vi.mock("node:http", () => {
 });
 
 // Import after mocks are set up
-const {
-  sendMessage,
-  sendFileUrl,
-  fetchChatUsers,
-  resolveChatUserId,
-  splitTextForSynology,
-  SYNOLOGY_CHUNK_LIMIT,
-} = await import("./client.js");
+const { sendMessage, sendFileUrl, fetchChatUsers, resolveChatUserId, chunkTextForSynology } =
+  await import("./client.js");
 const https = await import("node:https");
 let fakeNowMs = 1_700_000_000_000;
 
@@ -92,139 +86,59 @@ describe("sendMessage", () => {
   });
 });
 
-describe("splitTextForSynology", () => {
+describe("chunkTextForSynology", () => {
+  const LIMIT = 2000; // matches outbound descriptor textChunkLimit
+
+  it("returns empty array for empty text", () => {
+    expect(chunkTextForSynology("", LIMIT)).toEqual([]);
+  });
+
   it("returns single chunk for short text", () => {
-    const result = splitTextForSynology("Hello world");
+    const result = chunkTextForSynology("Hello world", LIMIT);
     expect(result).toEqual(["Hello world"]);
   });
 
   it("returns single chunk for text at exactly the limit", () => {
-    const text = "x".repeat(SYNOLOGY_CHUNK_LIMIT);
-    const result = splitTextForSynology(text);
+    const text = "x".repeat(LIMIT);
+    const result = chunkTextForSynology(text, LIMIT);
     expect(result).toEqual([text]);
   });
 
   it("splits long text into multiple chunks", () => {
     const text = "word ".repeat(500); // ~2500 chars
-    const chunks = splitTextForSynology(text);
+    const chunks = chunkTextForSynology(text, LIMIT);
     expect(chunks.length).toBeGreaterThan(1);
-    // Rejoined text should equal original
     expect(chunks.join("")).toBe(text);
   });
 
   it("prefers splitting at newlines", () => {
     const line = "a".repeat(1000);
     const text = `${line}\n${line}\n${line}`;
-    const chunks = splitTextForSynology(text);
-    // First chunk should end right after the first newline
+    const chunks = chunkTextForSynology(text, LIMIT);
     expect(chunks[0]).toBe(`${line}\n`);
   });
 
   it("falls back to splitting at spaces", () => {
-    // No newlines, but has spaces
     const words = "abcdefghij ".repeat(200); // ~2200 chars, no newlines
-    const chunks = splitTextForSynology(words);
+    const chunks = chunkTextForSynology(words, LIMIT);
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.join("")).toBe(words);
-    // First chunk should end at a space boundary
     expect(chunks[0].endsWith(" ")).toBe(true);
   });
 
   it("hard-cuts when no whitespace is available", () => {
-    const text = "x".repeat(4000); // No spaces or newlines
-    const chunks = splitTextForSynology(text);
+    const text = "x".repeat(4000);
+    const chunks = chunkTextForSynology(text, LIMIT);
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.join("")).toBe(text);
-    expect(chunks[0].length).toBe(SYNOLOGY_CHUNK_LIMIT);
+    expect(chunks[0].length).toBe(LIMIT);
   });
 
-  it("respects custom limit parameter", () => {
+  it("respects the limit parameter", () => {
     const text = "a".repeat(100);
-    const chunks = splitTextForSynology(text, 30);
+    const chunks = chunkTextForSynology(text, 30);
     expect(chunks.length).toBe(4); // 30 + 30 + 30 + 10
     expect(chunks.join("")).toBe(text);
-  });
-});
-
-describe("sendMessage chunking", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    fakeNowMs += 10_000;
-    vi.setSystemTime(fakeNowMs);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("sends multiple requests for long text", async () => {
-    mockSuccessResponse();
-    const longText = "word ".repeat(1000); // ~5000 chars
-    const result = await settleTimers(sendMessage("https://nas.example.com/incoming", longText));
-    expect(result).toBe(true);
-    const httpsRequest = vi.mocked(https.request);
-    expect(httpsRequest.mock.calls.length).toBeGreaterThan(1);
-  });
-
-  it("sends single request for short text", async () => {
-    mockSuccessResponse();
-    const result = await settleTimers(
-      sendMessage("https://nas.example.com/incoming", "Short message"),
-    );
-    expect(result).toBe(true);
-    const httpsRequest = vi.mocked(https.request);
-    // May have retries but only 1 unique message payload
-    expect(httpsRequest.mock.calls.length).toBe(1);
-  });
-
-  it("only includes user_ids in the first chunk to avoid duplicate notifications", async () => {
-    mockSuccessResponse();
-    const longText = "word ".repeat(1000); // ~5000 chars, will produce multiple chunks
-    await settleTimers(sendMessage("https://nas.example.com/incoming", longText, 42));
-    const httpsRequest = vi.mocked(https.request);
-    const calls = httpsRequest.mock.calls;
-    expect(calls.length).toBeGreaterThan(1);
-
-    // Extract payload bodies from each call
-    for (let i = 0; i < calls.length; i++) {
-      // The body is written via req.write — get it from the mock
-      const req = httpsRequest.mock.results[i].value;
-      const writeCall = req.write.mock.calls[0][0] as string;
-      const payloadStr = decodeURIComponent(writeCall.replace("payload=", ""));
-      const payload = JSON.parse(payloadStr);
-
-      if (i === 0) {
-        expect(payload.user_ids).toEqual([42]);
-      } else {
-        expect(payload.user_ids).toBeUndefined();
-      }
-    }
-  });
-
-  it("returns false if any chunk fails", async () => {
-    const httpsRequest = vi.mocked(https.request);
-    let callCount = 0;
-    httpsRequest.mockImplementation((_url: any, _opts: any, callback: any) => {
-      callCount++;
-      const res = new EventEmitter() as any;
-      // First chunk succeeds, second fails
-      res.statusCode = callCount <= 1 ? 200 : 500;
-      process.nextTick(() => {
-        callback(res);
-        res.emit("data", Buffer.from("ok"));
-        res.emit("end");
-      });
-      const req = new EventEmitter() as any;
-      req.write = vi.fn();
-      req.end = vi.fn();
-      req.destroy = vi.fn();
-      return req;
-    });
-
-    const longText = "word ".repeat(1000);
-    const result = await settleTimers(sendMessage("https://nas.example.com/incoming", longText));
-    expect(result).toBe(false);
   });
 });
 

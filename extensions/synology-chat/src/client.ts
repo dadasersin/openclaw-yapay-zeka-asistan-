@@ -10,16 +10,16 @@ const MIN_SEND_INTERVAL_MS = 500;
 let lastSendTime = 0;
 
 /**
- * Maximum text length per message to Synology Chat.
- * The API silently truncates around 2000 chars; we use 1800 for safety margin.
- */
-export const SYNOLOGY_CHUNK_LIMIT = 1800;
-
-/**
  * Split text into chunks that fit within Synology Chat's message size limit.
  * Prefers splitting at newlines, then spaces, then hard-cuts as a last resort.
+ *
+ * Follows the ChannelOutboundAdapter.chunker contract:
+ *   (text: string, limit: number) => string[]
+ * Referenced by the outbound descriptor in channel.ts so the framework
+ * handles the send loop, retry, and abort automatically.
  */
-export function splitTextForSynology(text: string, limit = SYNOLOGY_CHUNK_LIMIT): string[] {
+export function chunkTextForSynology(text: string, limit: number): string[] {
+  if (!text) return [];
   if (text.length <= limit) return [text];
 
   const chunks: string[] = [];
@@ -83,31 +83,14 @@ const chatUserCache = new Map<string, ChatUserCacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Send a text message to Synology Chat via the incoming webhook.
- * Long messages are automatically split into chunks to prevent silent truncation.
+ * Send a single text message to Synology Chat via the incoming webhook.
  *
- * @param incomingUrl - Synology Chat incoming webhook URL
- * @param text - Message text to send
- * @param userId - Optional user ID to mention with @
- * @returns true if all chunks sent successfully
+ * Note: chunking of long messages is handled by the framework via the
+ * `chunker` field in the outbound descriptor (channel.ts). This function
+ * receives already-chunked text when called through the outbound adapter.
+ * The dispatcher webhook path still calls this directly for inline replies.
  */
 export async function sendMessage(
-  incomingUrl: string,
-  text: string,
-  userId?: string | number,
-  allowInsecureSsl = true,
-): Promise<boolean> {
-  const chunks = splitTextForSynology(text);
-  for (let i = 0; i < chunks.length; i++) {
-    // Only include user_ids in the first chunk to avoid duplicate push notifications
-    const chunkUserId = i === 0 ? userId : undefined;
-    const ok = await sendSingleMessage(incomingUrl, chunks[i], chunkUserId, allowInsecureSsl);
-    if (!ok) return false;
-  }
-  return true;
-}
-
-async function sendSingleMessage(
   incomingUrl: string,
   text: string,
   userId?: string | number,

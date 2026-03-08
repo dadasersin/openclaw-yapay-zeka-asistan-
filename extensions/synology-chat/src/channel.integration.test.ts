@@ -38,10 +38,14 @@ vi.mock("./runtime.js", () => ({
   })),
 }));
 
-vi.mock("./client.js", () => ({
-  sendMessage: vi.fn().mockResolvedValue(true),
-  sendFileUrl: vi.fn().mockResolvedValue(true),
-}));
+vi.mock("./client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./client.js")>();
+  return {
+    ...actual,
+    sendMessage: vi.fn().mockResolvedValue(true),
+    sendFileUrl: vi.fn().mockResolvedValue(true),
+  };
+});
 
 const { createSynologyChatPlugin } = await import("./channel.js");
 describe("Synology channel wiring integration", () => {

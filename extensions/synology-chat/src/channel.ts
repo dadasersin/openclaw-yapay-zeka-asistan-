@@ -12,7 +12,7 @@ import {
 } from "openclaw/plugin-sdk/synology-chat";
 import { z } from "zod";
 import { listAccountIds, resolveAccount } from "./accounts.js";
-import { sendMessage, sendFileUrl } from "./client.js";
+import { sendMessage, sendFileUrl, chunkTextForSynology } from "./client.js";
 import { getSynologyRuntime } from "./runtime.js";
 import type { ResolvedSynologyChatAccount } from "./types.js";
 import { createWebhookHandler } from "./webhook-handler.js";
@@ -193,6 +193,8 @@ export function createSynologyChatPlugin() {
 
     outbound: {
       deliveryMode: "gateway" as const,
+      chunker: chunkTextForSynology,
+      chunkerMode: "text" as const,
       textChunkLimit: 2000,
 
       sendText: async ({ to, text, accountId, cfg }: any) => {
