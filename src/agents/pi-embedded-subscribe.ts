@@ -285,7 +285,8 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     // Emit a live usage event so the TUI footer updates after each LLM response.
     // This must fire before agent_end / lifecycle "end" so the TUI receives it
     // while the run is still active.
-    const promptTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+    const derivedPrompt = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+    const promptTokens = derivedPrompt || (usage.total ?? 0);
     emitAgentEvent({
       runId: params.runId,
       stream: "usage",

@@ -362,6 +362,7 @@ export function createSessionActions(context: SessionActionContext) {
     state.currentSessionKey = nextKey;
     state.activeChatRunId = null;
     state.currentSessionId = null;
+    state.liveUsageUpdatedAt = 0;
     // Session keys can move backwards in updatedAt ordering; drop previous session freshness
     // so refresh data for the newly selected session isn't rejected as stale.
     state.sessionInfo.updatedAt = null;

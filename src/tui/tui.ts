@@ -396,6 +396,9 @@ export async function runTui(opts: TuiOptions) {
     get liveUsageUpdatedAt() {
       return liveUsageUpdatedAt;
     },
+    set liveUsageUpdatedAt(value) {
+      liveUsageUpdatedAt = value;
+    },
     get initialSessionApplied() {
       return initialSessionApplied;
     },
