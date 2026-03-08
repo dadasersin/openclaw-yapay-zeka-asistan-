@@ -261,9 +261,12 @@ export async function speakStream(
         text: sentence,
         voice,
       });
-      spokenSentences.push(
-        result && "partial" in result && result.partial ? `${sentence} [truncated]` : sentence,
-      );
+      const wasAborted = result && "partial" in result && result.partial;
+      spokenSentences.push(wasAborted ? `${sentence} [truncated]` : sentence);
+      // Barge-in aborted playback: stop sending remaining sentences
+      if (wasAborted) {
+        break;
+      }
     }
 
     // Record full transcript after all sentences played

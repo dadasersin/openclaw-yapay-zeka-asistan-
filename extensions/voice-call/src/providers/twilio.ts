@@ -619,6 +619,7 @@ export class TwilioProvider implements VoiceCallProvider {
     // Try streaming path first (lower latency)
     if (ttsProvider.synthesizeForTelephonyStream) {
       let framesEmitted = false;
+      let aborted = false;
       try {
         await handler.queueTts(streamSid, async (signal) => {
           // Start synthesis inside the queue callback so OpenAI timeout
@@ -655,7 +656,9 @@ export class TwilioProvider implements VoiceCallProvider {
               }
             }
 
-            if (!signal.aborted) {
+            if (signal.aborted) {
+              aborted = true;
+            } else {
               // Send any remaining buffered mu-law bytes as a final short frame
               if (mulawCarry.length > 0) {
                 handler.sendAudio(streamSid, mulawCarry);
@@ -669,6 +672,10 @@ export class TwilioProvider implements VoiceCallProvider {
             streamResult.cleanup();
           }
         });
+        // Barge-in aborted playback: signal callers to stop remaining sentences
+        if (aborted) {
+          return { partial: true };
+        }
         return {};
       } catch (err) {
         // Only fall back to buffered if no frames were sent yet —
@@ -682,6 +689,7 @@ export class TwilioProvider implements VoiceCallProvider {
     }
 
     // Buffered fallback
+    let bufferedAborted = false;
     await handler.queueTts(streamSid, async (signal) => {
       const muLawAudio = await ttsProvider.synthesizeForTelephony(text);
       for (const chunk of chunkAudio(muLawAudio, CHUNK_SIZE)) {
@@ -696,10 +704,15 @@ export class TwilioProvider implements VoiceCallProvider {
         }
       }
 
-      if (!signal.aborted) {
+      if (signal.aborted) {
+        bufferedAborted = true;
+      } else {
         handler.sendMark(streamSid, `tts-${Date.now()}`);
       }
     });
+    if (bufferedAborted) {
+      return { partial: true };
+    }
     return {};
   }
 
