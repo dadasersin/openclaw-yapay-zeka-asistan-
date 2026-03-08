@@ -994,7 +994,13 @@ export async function executeJobCore(
   //
   // When postToMainMode is "off", skip success summaries but still post
   // errors so monitoring/housekeeping failures remain visible.
-  const summaryText = res.summary?.trim();
+  // When postToMainMode is "full", post the complete agent output instead
+  // of the truncated summary.
+  const mainText =
+    job.postToMainMode === "full" && res.outputText?.trim()
+      ? res.outputText.trim()
+      : res.summary?.trim();
+  const summaryText = mainText;
   const deliveryPlan = resolveCronDeliveryPlan(job);
   const suppressMainSummary =
     (job.postToMainMode === "off" && res.status !== "error") ||
