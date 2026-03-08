@@ -255,13 +255,15 @@ export async function speakStream(
 
   try {
     for await (const sentence of sentences) {
-      await provider.playTts({
+      const result = await provider.playTts({
         callId,
         providerCallId,
         text: sentence,
         voice,
       });
-      spokenSentences.push(sentence);
+      spokenSentences.push(
+        result && "partial" in result && result.partial ? `${sentence} [truncated]` : sentence,
+      );
     }
 
     // Record full transcript after all sentences played

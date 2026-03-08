@@ -560,13 +560,12 @@ export class TwilioProvider implements VoiceCallProvider {
    * 2. TwiML <Say>: Falls back to Twilio's native TTS with Polly voices.
    *    Note: This may not work on all Twilio accounts.
    */
-  async playTts(input: PlayTtsInput): Promise<void> {
+  async playTts(input: PlayTtsInput): Promise<void | { partial?: boolean }> {
     // Try telephony TTS via media stream first (if configured)
     const streamSid = this.callStreamMap.get(input.providerCallId);
     if (this.ttsProvider && this.mediaStreamHandler && streamSid) {
       try {
-        await this.playTtsViaStream(input.text, streamSid);
-        return;
+        return await this.playTtsViaStream(input.text, streamSid);
       } catch (err) {
         console.warn(
           `[voice-call] Telephony TTS failed, falling back to Twilio <Say>:`,
@@ -605,7 +604,7 @@ export class TwilioProvider implements VoiceCallProvider {
    * Tries streaming first (lower latency), falls back to buffered synthesis.
    * Uses a queue to serialize playback and prevent overlapping audio.
    */
-  private async playTtsViaStream(text: string, streamSid: string): Promise<void> {
+  private async playTtsViaStream(text: string, streamSid: string): Promise<{ partial?: boolean }> {
     if (!this.ttsProvider || !this.mediaStreamHandler) {
       throw new Error("TTS provider and media stream handler required");
     }
@@ -670,13 +669,13 @@ export class TwilioProvider implements VoiceCallProvider {
             streamResult.cleanup();
           }
         });
-        return;
+        return {};
       } catch (err) {
         // Only fall back to buffered if no frames were sent yet —
         // replaying after partial playback causes garbled/duplicated speech
         if (framesEmitted) {
-          console.error("[voice-call] TTS streaming failed after partial playback:", String(err));
-          return;
+          console.warn("[voice-call] TTS streaming failed after partial playback:", String(err));
+          return { partial: true };
         }
         console.warn("[voice-call] TTS streaming failed, falling back to buffered:", String(err));
       }
@@ -701,6 +700,7 @@ export class TwilioProvider implements VoiceCallProvider {
         handler.sendMark(streamSid, `tts-${Date.now()}`);
       }
     });
+    return {};
   }
 
   /**
