@@ -61,6 +61,12 @@ export function normalizeAzureOpenAIBaseUrl(value: string): string {
     );
   }
 
+  if (parsed.search) {
+    throw new Error(
+      "Azure OpenAI base URL must not include query parameters. Use --azure-openai-api-version to set api-version.",
+    );
+  }
+
   return `${parsed.origin}/openai/v1`;
 }
 
@@ -90,7 +96,7 @@ export function applyAzureOpenAIProviderConfig(
 
   const agentModels = { ...cfg.agents?.defaults?.models };
   const existingModelParams = {
-    ...((agentModels[modelRef]?.params as Record<string, unknown> | undefined) ?? {}),
+    ...agentModels[modelRef]?.params,
   };
   if (apiVersion === AZURE_OPENAI_DEFAULT_API_VERSION) {
     delete existingModelParams.azureApiVersion;

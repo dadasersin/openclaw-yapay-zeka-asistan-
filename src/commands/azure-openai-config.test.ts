@@ -11,14 +11,8 @@ describe("azure-openai-config", () => {
   it("normalizes Azure base URL to /openai/v1", () => {
     const cases = [
       ["https://example.openai.azure.com", "https://example.openai.azure.com/openai/v1"],
-      [
-        "https://example.openai.azure.com/openai/v1",
-        "https://example.openai.azure.com/openai/v1",
-      ],
-      [
-        "https://example.services.ai.azure.com",
-        "https://example.services.ai.azure.com/openai/v1",
-      ],
+      ["https://example.openai.azure.com/openai/v1", "https://example.openai.azure.com/openai/v1"],
+      ["https://example.services.ai.azure.com", "https://example.services.ai.azure.com/openai/v1"],
       [
         "https://example.cognitiveservices.azure.com",
         "https://example.cognitiveservices.azure.com/openai/v1",
@@ -42,6 +36,14 @@ describe("azure-openai-config", () => {
     );
   });
 
+  it("rejects base URLs with query params", () => {
+    expect(() =>
+      normalizeAzureOpenAIBaseUrl(
+        "https://example.openai.azure.com/openai/v1?api-version=2025-04-01-preview",
+      ),
+    ).toThrow(/must not include query parameters/i);
+  });
+
   it("rejects empty model IDs", () => {
     expect(() => normalizeAzureOpenAIModelId("   ")).toThrow(/deployment\/model ID is required/i);
   });
@@ -52,11 +54,14 @@ describe("azure-openai-config", () => {
   });
 
   it("applies provider + default model config", () => {
-    const cfg = applyAzureOpenAIConfig({}, {
-      baseUrl: "https://example.openai.azure.com/openai/v1",
-      modelId: "gpt-4.1",
-      apiVersion: "2025-04-01-preview",
-    });
+    const cfg = applyAzureOpenAIConfig(
+      {},
+      {
+        baseUrl: "https://example.openai.azure.com/openai/v1",
+        modelId: "gpt-4.1",
+        apiVersion: "2025-04-01-preview",
+      },
+    );
 
     expect(cfg.models?.providers?.["azure-openai-responses"]?.api).toBe("openai-responses");
     expect(cfg.models?.providers?.["azure-openai-responses"]?.baseUrl).toBe(
@@ -69,11 +74,14 @@ describe("azure-openai-config", () => {
   });
 
   it("uses default v1 apiVersion without adding explicit params", () => {
-    const cfg = applyAzureOpenAIConfig({}, {
-      baseUrl: "https://example.openai.azure.com/openai/v1",
-      modelId: "gpt-4.1",
-      apiVersion: AZURE_OPENAI_DEFAULT_API_VERSION,
-    });
+    const cfg = applyAzureOpenAIConfig(
+      {},
+      {
+        baseUrl: "https://example.openai.azure.com/openai/v1",
+        modelId: "gpt-4.1",
+        apiVersion: AZURE_OPENAI_DEFAULT_API_VERSION,
+      },
+    );
     expect(cfg.agents?.defaults?.models?.["azure-openai-responses/gpt-4.1"]?.params).toEqual({});
   });
 });

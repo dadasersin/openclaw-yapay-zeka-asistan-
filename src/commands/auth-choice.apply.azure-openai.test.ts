@@ -1,9 +1,11 @@
+import fs from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyAuthChoiceAzureOpenAI } from "./auth-choice.apply.azure-openai.js";
 import {
   createAuthTestLifecycle,
   createExitThrowingRuntime,
   createWizardPrompter,
+  authProfilePathForAgent,
   readAuthProfilesForAgent,
   setupAuthTestEnv,
 } from "./test-wizard-helpers.js";
@@ -126,5 +128,28 @@ describe("applyAuthChoiceAzureOpenAI", () => {
     ).toMatchObject({
       azureApiVersion: "2025-04-01-preview",
     });
+  });
+
+  it("validates Azure base URL before persisting API key", async () => {
+    const agentDir = await setupTempState();
+    const prompter = createWizardPrompter({}, { defaultSelect: "" });
+    const runtime = createExitThrowingRuntime();
+
+    await expect(
+      applyAuthChoiceAzureOpenAI({
+        authChoice: "azure-openai-api-key",
+        config: {},
+        prompter,
+        runtime,
+        setDefaultModel: true,
+        opts: {
+          azureOpenaiApiKey: "azure-key",
+          azureOpenaiBaseUrl: "https://api.openai.com/v1",
+          azureOpenaiModelId: "gpt-4.1",
+        },
+      }),
+    ).rejects.toThrow(/Azure OpenAI base URL must use an Azure host/);
+
+    await expect(fs.access(authProfilePathForAgent(agentDir))).rejects.toBeDefined();
   });
 });

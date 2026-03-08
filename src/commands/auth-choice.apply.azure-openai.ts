@@ -69,6 +69,11 @@ export async function applyAuthChoiceAzureOpenAI(
   const noteAgentModel = createAuthChoiceAgentModelNoter(params);
   const requestedSecretInputMode = normalizeSecretInputModeInput(params.opts?.secretInputMode);
 
+  const baseUrl = await resolveAzureOpenAIBaseUrl(params);
+  const modelId = await resolveAzureOpenAIModelId(params);
+  const apiVersion = params.opts?.azureOpenaiApiVersion?.trim() || undefined;
+  const defaultModelRef = `azure-openai-responses/${modelId}`;
+
   await ensureApiKeyFromOptionEnvOrPrompt({
     token: params.opts?.azureOpenaiApiKey,
     tokenProvider: "azure-openai-responses",
@@ -84,11 +89,6 @@ export async function applyAuthChoiceAzureOpenAI(
     setCredential: async (apiKey, mode) =>
       setAzureOpenaiApiKey(apiKey, params.agentDir, { secretInputMode: mode }),
   });
-
-  const baseUrl = await resolveAzureOpenAIBaseUrl(params);
-  const modelId = await resolveAzureOpenAIModelId(params);
-  const apiVersion = params.opts?.azureOpenaiApiVersion?.trim() || undefined;
-  const defaultModelRef = `azure-openai-responses/${modelId}`;
 
   nextConfig = applyAuthProfileConfig(nextConfig, {
     profileId: "azure-openai-responses:default",

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AuthProfileStore } from "./auth-profiles.js";
-import { requireApiKey, resolveAwsSdkEnvVarName, resolveModelAuthMode } from "./model-auth.js";
+import {
+  requireApiKey,
+  resolveAwsSdkEnvVarName,
+  resolveEnvApiKey,
+  resolveModelAuthMode,
+} from "./model-auth.js";
 
 describe("resolveAwsSdkEnvVarName", () => {
   it("prefers bearer token over access keys and profile", () => {
@@ -88,6 +93,22 @@ describe("resolveModelAuthMode", () => {
     expect(resolveModelAuthMode("aws-bedrock", undefined, { version: 1, profiles: {} })).toBe(
       "aws-sdk",
     );
+  });
+});
+
+describe("resolveEnvApiKey", () => {
+  it("resolves AZURE_OPENAI_API_KEY for azure-openai-responses", () => {
+    const previous = process.env.AZURE_OPENAI_API_KEY;
+    process.env.AZURE_OPENAI_API_KEY = "azure-from-env";
+    try {
+      expect(resolveEnvApiKey("azure-openai-responses")?.apiKey).toBe("azure-from-env");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.AZURE_OPENAI_API_KEY;
+      } else {
+        process.env.AZURE_OPENAI_API_KEY = previous;
+      }
+    }
   });
 });
 
