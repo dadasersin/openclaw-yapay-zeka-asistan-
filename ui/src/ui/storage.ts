@@ -1,4 +1,5 @@
 const KEY = "openclaw.control.settings.v1";
+const SESSION_TOKEN_KEY = "openclaw.control.session-token.v1";
 
 type PersistedUiSettings = Omit<UiSettings, "token"> & { token?: never };
 
@@ -35,7 +36,7 @@ export function loadSettings(): UiSettings {
 
   const defaults: UiSettings = {
     gatewayUrl: defaultUrl,
-    token: "",
+    token: loadSessionToken() ?? "",
     sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "system",
@@ -57,8 +58,7 @@ export function loadSettings(): UiSettings {
         typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
           ? parsed.gatewayUrl.trim()
           : defaults.gatewayUrl,
-      // Gateway auth is intentionally in-memory only; scrub any legacy persisted token on load.
-      token: defaults.token,
+      token: loadSessionToken() ?? defaults.token,
       sessionKey:
         typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()
           ? parsed.sessionKey.trim()
@@ -103,6 +103,7 @@ export function loadSettings(): UiSettings {
 
 export function saveSettings(next: UiSettings) {
   persistSettings(next);
+  persistSessionToken(next.token);
 }
 
 function persistSettings(next: UiSettings) {
@@ -119,4 +120,26 @@ function persistSettings(next: UiSettings) {
     ...(next.locale ? { locale: next.locale } : {}),
   };
   localStorage.setItem(KEY, JSON.stringify(persisted));
+}
+
+function loadSessionToken(): string | null {
+  try {
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    return typeof token === "string" && token.trim() ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistSessionToken(token: string) {
+  try {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      return;
+    }
+    sessionStorage.setItem(SESSION_TOKEN_KEY, trimmed);
+  } catch {
+    // ignore storage failures (private mode / unavailable sessionStorage)
+  }
 }
