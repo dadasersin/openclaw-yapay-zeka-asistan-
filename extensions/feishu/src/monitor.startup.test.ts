@@ -68,7 +68,7 @@ describe("Feishu monitor startup preflight", () => {
           feishu: {
             enabled: true,
             appId: "cli_default",
-            appSecret: "secret_default",
+            appSecret: "secret_default", // pragma: allowlist secret
             connectionMode: "websocket",
           },
         },

@@ -26,7 +26,7 @@ const hoisted = vi.hoisted(() => {
   const setModeMock = vi.fn();
   const setConfigOptionMock = vi.fn();
   const doctorMock = vi.fn();
-  const routeReplyMock = vi.fn(async () => ({ ok: true, messageId: "mock" }));
+  const routeReplyMock = vi.fn(async (_params?: unknown) => ({ ok: true, messageId: "mock" }));
   return {
     callGatewayMock,
     requireAcpRuntimeBackendMock,
@@ -112,7 +112,7 @@ vi.mock("../../discord/monitor/gateway-plugin.js", () => ({
 }));
 
 vi.mock("./route-reply.js", () => ({
-  routeReply: (...args: unknown[]) => hoisted.routeReplyMock(...args),
+  routeReply: (params: unknown) => hoisted.routeReplyMock(params),
 }));
 
 const { handleAcpCommand } = await import("./commands-acp.js");
