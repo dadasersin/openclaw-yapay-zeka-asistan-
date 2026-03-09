@@ -29,6 +29,9 @@ const BASE_METHODS = [
   "exec.approval.request",
   "exec.approval.waitDecision",
   "exec.approval.resolve",
+  "agentshield.approval.request",
+  "agentshield.approval.resolve",
+  "agentshield.approval.list",
   "wizard.start",
   "wizard.next",
   "wizard.cancel",
@@ -129,4 +132,6 @@ export const GATEWAY_EVENTS = [
   "exec.approval.requested",
   "exec.approval.resolved",
   GATEWAY_EVENT_UPDATE_AVAILABLE,
+  "agentshield.approval.requested",
+  "agentshield.approval.resolved",
 ];
