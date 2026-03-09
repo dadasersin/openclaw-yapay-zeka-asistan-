@@ -163,7 +163,7 @@ function resolveDirectCronRetryDelaysMs(): readonly number[] {
 async function retryTransientDirectCronDelivery<T>(params: {
   jobId: string;
   signal?: AbortSignal;
-  run: () => Promise<T>;
+  run: (isRetry: boolean) => Promise<T>;
 }): Promise<T> {
   const retryDelaysMs = resolveDirectCronRetryDelaysMs();
   let retryIndex = 0;
@@ -171,8 +171,9 @@ async function retryTransientDirectCronDelivery<T>(params: {
     if (params.signal?.aborted) {
       throw new Error("cron delivery aborted");
     }
+    const isRetry = retryIndex > 0;
     try {
-      return await params.run();
+      return await params.run(isRetry);
     } catch (err) {
       const delayMs = retryDelaysMs[retryIndex];
       if (delayMs == null || !isTransientDirectCronDeliveryError(err) || params.signal?.aborted) {
@@ -243,7 +244,7 @@ export async function dispatchCronDelivery(
         agentId: params.agentId,
         sessionKey: params.agentSessionKey,
       });
-      const runDelivery = async () =>
+      const runDelivery = async (skipQueue?: boolean) =>
         await deliverOutboundPayloads({
           cfg: params.cfgWithAgentDefaults,
           channel: delivery.channel,
@@ -256,12 +257,22 @@ export async function dispatchCronDelivery(
           bestEffort: params.deliveryBestEffort,
           deps: createOutboundSendDeps(params.deps),
           abortSignal: params.abortSignal,
+          // Only skip the write-ahead delivery queue on *retry* attempts.
+          // The initial attempt keeps the queue entry so
+          // recoverPendingDeliveries can replay after a crash.  Retries
+          // must skip the queue because each call to deliverOutboundPayloads
+          // creates a new queue entry — if the first attempt actually
+          // succeeded at the channel level but threw a transient error
+          // (e.g. gateway timeout / econnreset), the retry would create a
+          // duplicate entry and send the message again.
+          // See: https://github.com/openclaw/openclaw/issues/40545
+          ...(skipQueue ? { skipQueue: true } : {}),
         });
       const deliveryResults = options?.retryTransient
         ? await retryTransientDirectCronDelivery({
             jobId: params.job.id,
             signal: params.abortSignal,
-            run: runDelivery,
+            run: (isRetry) => runDelivery(isRetry),
           })
         : await runDelivery();
       delivered = deliveryResults.length > 0;
