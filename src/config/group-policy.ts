@@ -300,7 +300,7 @@ function resolveChannelGroups(
 
 type ChannelGroupPolicyMode = "open" | "allowlist" | "disabled";
 
-function resolveChannelGroupPolicyMode(
+export function resolveChannelGroupPolicyMode(
   cfg: OpenClawConfig,
   channel: GroupPolicyChannel,
   accountId?: string | null,
