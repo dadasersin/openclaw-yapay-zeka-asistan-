@@ -68,6 +68,34 @@ type ModelsConfig = NonNullable<OpenClawConfig["models"]>;
 export type ProviderConfig = NonNullable<ModelsConfig["providers"]>[string];
 
 const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+const GROQ_DEFAULT_MODEL_ID = "llama-3.3-70b-versatile";
+const GROQ_DEFAULT_CONTEXT_WINDOW = 131072;
+const GROQ_DEFAULT_MAX_TOKENS = 8192;
+const GROQ_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+function buildGroqProvider(): ProviderConfig {
+  return {
+    baseUrl: GROQ_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: GROQ_DEFAULT_MODEL_ID,
+        name: "Llama 3.3 70B Versatile",
+        reasoning: false,
+        input: ["text"],
+        cost: GROQ_DEFAULT_COST,
+        contextWindow: GROQ_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GROQ_DEFAULT_MAX_TOKENS,
+      },
+    ],
+  };
+}
 
 function normalizeApiKeyConfig(value: string): string {
   const trimmed = value.trim();
@@ -511,6 +539,7 @@ const SIMPLE_IMPLICIT_PROVIDER_LOADERS: ImplicitProviderLoader[] = [
     ...(await buildHuggingfaceProvider(discoveryApiKey)),
     apiKey,
   })),
+  withApiKey("groq", async ({ apiKey }) => ({ ...buildGroqProvider(), apiKey })),
   withApiKey("qianfan", async ({ apiKey }) => ({ ...buildQianfanProvider(), apiKey })),
   withApiKey("openrouter", async ({ apiKey }) => ({ ...buildOpenrouterProvider(), apiKey })),
   withApiKey("nvidia", async ({ apiKey }) => ({ ...buildNvidiaProvider(), apiKey })),
