@@ -9,10 +9,12 @@ export const MAX_HISTORY_KEYS = 1000;
 /**
  * Evict oldest keys from a history map when it exceeds MAX_HISTORY_KEYS.
  * Uses Map's insertion order for LRU-like behavior.
+ * Optional onEvictKey is called for each key before deletion (e.g. to clean up persisted media).
  */
 export function evictOldHistoryKeys<T>(
   historyMap: Map<string, T[]>,
   maxKeys: number = MAX_HISTORY_KEYS,
+  onEvictKey?: (key: string, entries: T[]) => void,
 ): void {
   if (historyMap.size <= maxKeys) {
     return;
@@ -22,6 +24,10 @@ export function evictOldHistoryKeys<T>(
   for (let i = 0; i < keysToDelete; i++) {
     const key = iterator.next().value;
     if (key !== undefined) {
+      const entries = historyMap.get(key) ?? [];
+      if (onEvictKey) {
+        onEvictKey(key, entries);
+      }
       historyMap.delete(key);
     }
   }
@@ -32,6 +38,10 @@ export type HistoryEntry = {
   body: string;
   timestamp?: number;
   messageId?: string;
+  /** Persisted paths for media in this entry (e.g. Telegram group history images). */
+  mediaPaths?: string[];
+  /** Content types for mediaPaths (parallel to mediaPaths). */
+  mediaTypes?: string[];
 };
 
 export function buildHistoryContext(params: {
@@ -54,6 +64,10 @@ export function appendHistoryEntry<T extends HistoryEntry>(params: {
   historyKey: string;
   entry: T;
   limit: number;
+  /** Called when an entry is shifted out due to limit. Use to delete persisted media. */
+  onEvictEntry?: (entry: T) => void;
+  /** Passed to evictOldHistoryKeys when map exceeds max keys. Use to delete key-scoped cache. */
+  onEvictKey?: (key: string, entries: T[]) => void;
 }): T[] {
   const { historyMap, historyKey, entry } = params;
   if (params.limit <= 0) {
@@ -62,15 +76,17 @@ export function appendHistoryEntry<T extends HistoryEntry>(params: {
   const history = historyMap.get(historyKey) ?? [];
   history.push(entry);
   while (history.length > params.limit) {
-    history.shift();
+    const evicted = history.shift();
+    if (evicted !== undefined && params.onEvictEntry) {
+      params.onEvictEntry(evicted);
+    }
   }
   if (historyMap.has(historyKey)) {
     // Refresh insertion order so eviction keeps recently used histories.
     historyMap.delete(historyKey);
   }
   historyMap.set(historyKey, history);
-  // Evict oldest keys if map exceeds max size to prevent unbounded memory growth
-  evictOldHistoryKeys(historyMap);
+  evictOldHistoryKeys(historyMap, MAX_HISTORY_KEYS, params.onEvictKey);
   return history;
 }
 
@@ -79,6 +95,8 @@ export function recordPendingHistoryEntry<T extends HistoryEntry>(params: {
   historyKey: string;
   entry: T;
   limit: number;
+  onEvictEntry?: (entry: T) => void;
+  onEvictKey?: (key: string, entries: T[]) => void;
 }): T[] {
   return appendHistoryEntry(params);
 }
@@ -88,6 +106,8 @@ export function recordPendingHistoryEntryIfEnabled<T extends HistoryEntry>(param
   historyKey: string;
   entry?: T | null;
   limit: number;
+  onEvictEntry?: (entry: T) => void;
+  onEvictKey?: (key: string, entries: T[]) => void;
 }): T[] {
   if (!params.entry) {
     return [];
@@ -100,6 +120,8 @@ export function recordPendingHistoryEntryIfEnabled<T extends HistoryEntry>(param
     historyKey: params.historyKey,
     entry: params.entry,
     limit: params.limit,
+    onEvictEntry: params.onEvictEntry,
+    onEvictKey: params.onEvictKey,
   });
 }
 

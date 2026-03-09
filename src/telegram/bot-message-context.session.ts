@@ -173,16 +173,26 @@ export async function buildTelegramInboundContextPayload(params: {
   const commandBody = normalizeCommandBody(rawBody, {
     botUsername: primaryCtx.me?.username?.toLowerCase(),
   });
+  const historyEntries =
+    isGroup && historyKey && historyLimit > 0 ? (groupHistories.get(historyKey) ?? []) : [];
   const inboundHistory =
-    isGroup && historyKey && historyLimit > 0
-      ? (groupHistories.get(historyKey) ?? []).map((entry) => ({
+    historyEntries.length > 0
+      ? historyEntries.map((entry) => ({
           sender: entry.sender,
           body: entry.body,
           timestamp: entry.timestamp,
+          ...(entry.mediaPaths?.length ? { mediaPaths: entry.mediaPaths } : undefined),
+          ...(entry.mediaTypes?.length ? { mediaTypes: entry.mediaTypes } : undefined),
         }))
       : undefined;
   const currentMediaForContext = stickerCacheHit ? [] : allMedia;
-  const contextMedia = [...currentMediaForContext, ...replyMedia];
+  const historyMediaRefs: TelegramMediaRef[] = historyEntries.flatMap((entry) =>
+    (entry.mediaPaths ?? []).map((p, i) => ({
+      path: p,
+      contentType: entry.mediaTypes?.[i],
+    })),
+  );
+  const contextMedia = [...currentMediaForContext, ...replyMedia, ...historyMediaRefs];
   const ctxPayload = finalizeInboundContext({
     Body: combinedBody,
     BodyForAgent: bodyText,
