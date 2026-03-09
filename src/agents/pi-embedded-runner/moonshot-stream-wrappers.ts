@@ -36,9 +36,19 @@ function getMoonshotRetryAfterMs(err: unknown): number | undefined {
       : ((headers as Record<string, unknown>)["retry-after"] ??
         (headers as Record<string, unknown>)["Retry-After"]);
   if (typeof raw === "string") {
+    // RFC 7231 §7.1.3: Retry-After is either delta-seconds ("120") or an
+    // HTTP-date ("Wed, 21 Oct 2026 07:28:00 GMT"). Try delta-seconds first.
     const seconds = parseFloat(raw);
     if (Number.isFinite(seconds) && seconds > 0) {
       return seconds * 1_000;
+    }
+    // Fall back to HTTP-date: compute ms until that timestamp.
+    const date = new Date(raw);
+    if (!Number.isNaN(date.getTime())) {
+      const ms = date.getTime() - Date.now();
+      if (ms > 0) {
+        return ms;
+      }
     }
   }
   return undefined;
