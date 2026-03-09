@@ -75,7 +75,7 @@ import {
 import { ExecApprovalManager } from "./exec-approval-manager.js";
 import { NodeRegistry } from "./node-registry.js";
 import type { startBrowserControlServerIfEnabled } from "./server-browser.js";
-import { createChannelManager } from "./server-channels.js";
+import { createChannelManager, type ChannelManager } from "./server-channels.js";
 import { createAgentEventHandler } from "./server-chat.js";
 import { createGatewayCloseHandler } from "./server-close.js";
 import { buildGatewayCronService } from "./server-cron.js";
@@ -206,6 +206,81 @@ function applyGatewayAuthOverridesForStartupPreflight(
       tailscale: mergeGatewayTailscaleConfig(config.gateway?.tailscale, overrides.tailscale),
     },
   };
+}
+
+async function waitForPendingDeliveryChannelReadiness(params: {
+  channelManager: ChannelManager;
+  channels: Set<string>;
+  log: { info: (msg: string) => void; warn: (msg: string) => void };
+  timeoutMs?: number;
+  pollMs?: number;
+}): Promise<void> {
+  const channels = [...params.channels].map((value) => value.trim()).filter(Boolean);
+  if (channels.length === 0) {
+    return;
+  }
+
+  const timeoutMs = params.timeoutMs ?? 15_000;
+  const pollMs = Math.max(50, params.pollMs ?? 250);
+  const deadline = Date.now() + timeoutMs;
+
+  params.log.info(
+    `Recovery preflight: waiting for channel runtime readiness (${channels.join(", ")}), timeout ${timeoutMs}ms`,
+  );
+
+  while (true) {
+    const snapshot = params.channelManager.getRuntimeSnapshot();
+    const waiting: string[] = [];
+
+    for (const channel of channels) {
+      const accountMap = snapshot.channelAccounts[channel as ChannelId];
+      if (!accountMap) {
+        continue;
+      }
+      const accounts = Object.values(accountMap);
+      if (accounts.length === 0) {
+        continue;
+      }
+
+      const enabledConfigured = accounts.filter(
+        (account) => account.enabled !== false && account.configured !== false,
+      );
+      if (enabledConfigured.length === 0) {
+        continue;
+      }
+
+      const ready = enabledConfigured.some((account) => {
+        if (account.running !== true) {
+          return false;
+        }
+        if (typeof account.connected === "boolean") {
+          return account.connected;
+        }
+        return true;
+      });
+
+      if (!ready) {
+        waiting.push(channel);
+      }
+    }
+
+    if (waiting.length === 0) {
+      params.log.info(`Recovery preflight complete: runtime ready for ${channels.join(", ")}`);
+      return;
+    }
+
+    const now = Date.now();
+    if (now >= deadline) {
+      params.log.warn(
+        `Recovery preflight timeout after ${timeoutMs}ms; continuing while waiting on: ${waiting.join(", ")}`,
+      );
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, Math.min(pollMs, Math.max(1, deadline - now)));
+    });
+  }
 }
 
 export type GatewayServer = {
@@ -765,20 +840,6 @@ export async function startGatewayServer(
     void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
   }
 
-  // Recover pending outbound deliveries from previous crash/restart.
-  if (!minimalTestGateway) {
-    void (async () => {
-      const { recoverPendingDeliveries } = await import("../infra/outbound/delivery-queue.js");
-      const { deliverOutboundPayloads } = await import("../infra/outbound/deliver.js");
-      const logRecovery = log.child("delivery-recovery");
-      await recoverPendingDeliveries({
-        deliver: deliverOutboundPayloads,
-        log: logRecovery,
-        cfg: cfgAtStart,
-      });
-    })().catch((err) => log.error(`Delivery recovery failed: ${String(err)}`));
-  }
-
   const execApprovalManager = new ExecApprovalManager();
   const execApprovalForwarder = createExecApprovalForwarder();
   const execApprovalHandlers = createExecApprovalHandlers(execApprovalManager, {
@@ -934,6 +995,33 @@ export async function startGatewayServer(
       logChannels,
       logBrowser,
     }));
+  }
+
+  // Recover pending outbound deliveries from previous crash/restart.
+  // Run this after sidecars/channels start to avoid racing channel bootstrap
+  // (e.g., WhatsApp listener registration) during startup.
+  if (!minimalTestGateway) {
+    void (async () => {
+      const { loadPendingDeliveries, recoverPendingDeliveries } =
+        await import("../infra/outbound/delivery-queue.js");
+      const { deliverOutboundPayloads } = await import("../infra/outbound/deliver.js");
+      const logRecovery = log.child("delivery-recovery");
+      const pending = await loadPendingDeliveries();
+      if (pending.length === 0) {
+        return;
+      }
+      const channels = new Set<string>(pending.map((entry) => String(entry.channel)));
+      await waitForPendingDeliveryChannelReadiness({
+        channelManager,
+        channels,
+        log: logRecovery,
+      });
+      await recoverPendingDeliveries({
+        deliver: deliverOutboundPayloads,
+        log: logRecovery,
+        cfg: cfgAtStart,
+      });
+    })().catch((err) => log.error(`Delivery recovery failed: ${String(err)}`));
   }
 
   // Run gateway_start plugin hook (fire-and-forget)
