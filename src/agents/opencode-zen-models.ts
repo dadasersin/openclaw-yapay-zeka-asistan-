@@ -121,30 +121,30 @@ const MODEL_COSTS: Record<
   { input: number; output: number; cacheRead: number; cacheWrite: number }
 > = {
   "gpt-5.1-codex": {
-    input: 1.07,
-    output: 8.5,
-    cacheRead: 0.107,
+    input: 3.21,
+    output: 25.5,
+    cacheRead: 0.321,
     cacheWrite: 0,
   },
-  "claude-opus-4-6": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  "claude-opus-4-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  "gemini-3-pro": { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0 },
+  "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+  "claude-opus-4-5": { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+  "gemini-3-pro": { input: 6, output: 36, cacheRead: 0.6, cacheWrite: 0 },
   "gpt-5.1-codex-mini": {
-    input: 0.25,
-    output: 2,
-    cacheRead: 0.025,
+    input: 0.75,
+    output: 6,
+    cacheRead: 0.075,
     cacheWrite: 0,
   },
-  "gpt-5.1": { input: 1.07, output: 8.5, cacheRead: 0.107, cacheWrite: 0 },
+  "gpt-5.1": { input: 3.21, output: 25.5, cacheRead: 0.321, cacheWrite: 0 },
   "glm-4.7": { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  "gemini-3-flash": { input: 0.5, output: 3, cacheRead: 0.05, cacheWrite: 0 },
+  "gemini-3-flash": { input: 1.5, output: 9, cacheRead: 0.15, cacheWrite: 0 },
   "gpt-5.1-codex-max": {
-    input: 1.25,
-    output: 10,
-    cacheRead: 0.125,
+    input: 3.75,
+    output: 30,
+    cacheRead: 0.375,
     cacheWrite: 0,
   },
-  "gpt-5.2": { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+  "gpt-5.2": { input: 5.25, output: 42, cacheRead: 0.525, cacheWrite: 0 },
 };
 
 const DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };

@@ -14,8 +14,8 @@ export const BYTEPLUS_DEFAULT_MODEL_REF = `byteplus/${BYTEPLUS_DEFAULT_MODEL_ID}
 
 // BytePlus pricing (approximate, adjust based on actual pricing)
 export const BYTEPLUS_DEFAULT_COST = {
-  input: 0.0001, // $0.0001 per 1K tokens
-  output: 0.0002, // $0.0002 per 1K tokens
+  input: 0.0003, // $0.0003 per 1K tokens
+  output: 0.0006, // $0.0006 per 1K tokens
   cacheRead: 0,
   cacheWrite: 0,
 };

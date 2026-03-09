@@ -67,6 +67,9 @@ import {
 } from "./server/plugins-http.js";
 import type { ReadinessChecker } from "./server/readiness.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
+import { handleAdminBillingHttpRequest } from "../billing/admin-http.js";
+import { handleBillingHttpRequest } from "../billing/billing-http.js";
+import { enforcePaywallHttp } from "../billing/paywall.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -637,6 +640,58 @@ export function createGatewayHttpServer(opts: {
         ? resolvePluginRoutePathContext(requestPath)
         : null;
       const requestStages: GatewayHttpRequestStage[] = [
+        {
+          // Billing routes (/billing/*). /billing/portal requires the gateway
+          // Bearer token; checkout/webhook/status are unauthenticated.
+          name: "billing",
+          run: async () => {
+            if (!requestPath.startsWith("/billing")) return false;
+            let authorized = false;
+            if (requestPath === "/billing/portal") {
+              const bearerToken = getBearerToken(req);
+              const authResult = await authorizeHttpGatewayConnect({
+                auth: resolvedAuth,
+                connectAuth: bearerToken ? { token: bearerToken, password: bearerToken } : null,
+                req,
+                trustedProxies,
+                allowRealIpFallback,
+              });
+              authorized = authResult.ok;
+            }
+            return handleBillingHttpRequest(req, res, { authorized });
+          },
+        },
+        {
+          // Admin dashboard (/admin/billing/*) — requires gateway Bearer token
+          name: "admin-billing",
+          run: async () => {
+            if (!requestPath.startsWith("/admin/billing")) {
+              return false;
+            }
+            const bearerToken = getBearerToken(req);
+            const authResult = await authorizeHttpGatewayConnect({
+              auth: resolvedAuth,
+              connectAuth: bearerToken ? { token: bearerToken, password: bearerToken } : null,
+              req,
+              trustedProxies,
+              allowRealIpFallback,
+            });
+            return handleAdminBillingHttpRequest(req, res, { authorized: authResult.ok });
+          },
+        },
+        {
+          // Paywall gate: block AI/agent requests when no active subscription
+          name: "paywall",
+          run: () => {
+            // Only gate paths that invoke AI — let /billing, /health, /hooks, etc. through
+            const isAiPath =
+              requestPath.startsWith("/v1/") ||
+              requestPath.startsWith("/openai/") ||
+              requestPath.startsWith("/openresponses/");
+            if (!isAiPath) return false;
+            return enforcePaywallHttp(req, res);
+          },
+        },
         {
           name: "hooks",
           run: () => handleHooksRequest(req, res),

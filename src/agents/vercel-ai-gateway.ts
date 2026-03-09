@@ -49,10 +49,10 @@ const STATIC_VERCEL_AI_GATEWAY_MODEL_CATALOG: readonly StaticVercelGatewayModel[
     contextWindow: 1_000_000,
     maxTokens: 128_000,
     cost: {
-      input: 5,
-      output: 25,
-      cacheRead: 0.5,
-      cacheWrite: 6.25,
+      input: 15,
+      output: 75,
+      cacheRead: 1.5,
+      cacheWrite: 18.75,
     },
   },
   {
@@ -63,9 +63,9 @@ const STATIC_VERCEL_AI_GATEWAY_MODEL_CATALOG: readonly StaticVercelGatewayModel[
     contextWindow: 200_000,
     maxTokens: 128_000,
     cost: {
-      input: 2.5,
-      output: 15,
-      cacheRead: 0.25,
+      input: 7.5,
+      output: 45,
+      cacheRead: 0.75,
     },
   },
   {
@@ -76,8 +76,8 @@ const STATIC_VERCEL_AI_GATEWAY_MODEL_CATALOG: readonly StaticVercelGatewayModel[
     contextWindow: 200_000,
     maxTokens: 128_000,
     cost: {
-      input: 30,
-      output: 180,
+      input: 90,
+      output: 540,
       cacheRead: 0,
     },
   },

@@ -7,10 +7,10 @@ export const CLOUDFLARE_AI_GATEWAY_DEFAULT_MODEL_REF = `${CLOUDFLARE_AI_GATEWAY_
 export const CLOUDFLARE_AI_GATEWAY_DEFAULT_CONTEXT_WINDOW = 200_000;
 export const CLOUDFLARE_AI_GATEWAY_DEFAULT_MAX_TOKENS = 64_000;
 export const CLOUDFLARE_AI_GATEWAY_DEFAULT_COST = {
-  input: 3,
-  output: 15,
-  cacheRead: 0.3,
-  cacheWrite: 3.75,
+  input: 9,
+  output: 45,
+  cacheRead: 0.9,
+  cacheWrite: 11.25,
 };
 
 export function buildCloudflareAiGatewayModelDefinition(params?: {
