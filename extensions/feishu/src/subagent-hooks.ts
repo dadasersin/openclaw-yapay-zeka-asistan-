@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/feishu";
 import { resolveFeishuAccount } from "./accounts.js";
+import { normalizeFeishuTarget } from "./targets.js";
 import { getFeishuThreadBindingManager } from "./thread-bindings.js";
 
 export function registerFeishuSubagentHooks(api: OpenClawPluginApi) {
@@ -88,7 +89,10 @@ export function registerFeishuSubagentHooks(api: OpenClawPluginApi) {
 
     // Match by requester conversation to avoid routing to the wrong chat
     // when the same subagent is focused in multiple conversations.
-    const requesterTo = event.requesterOrigin?.to?.trim() || "";
+    // Normalize requester target: requesterOrigin.to may carry transport
+    // prefixes (e.g. "user:ou_...") while bindings store raw IDs ("ou_...").
+    const rawRequesterTo = event.requesterOrigin?.to?.trim() || "";
+    const requesterTo = normalizeFeishuTarget(rawRequesterTo) || rawRequesterTo;
     const requesterThreadId =
       event.requesterOrigin?.threadId != null && event.requesterOrigin.threadId !== ""
         ? String(event.requesterOrigin.threadId).trim()

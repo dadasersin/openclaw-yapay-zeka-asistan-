@@ -12,6 +12,8 @@ import {
   writeJsonFileAtomically,
   resolveThreadBindingConversationIdFromBindingId,
   formatThreadBindingDurationLabel,
+  isAcpSessionKey,
+  readAcpSessionEntry,
 } from "openclaw/plugin-sdk/feishu";
 
 const DEFAULT_THREAD_BINDING_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
@@ -594,12 +596,25 @@ export function createFeishuThreadBindingManager(
           record,
           defaultMaxAgeMs: maxAgeMs,
         });
-        if (!idleExpired && !maxAgeExpired) {
+        // Auto-clean bindings to dead ACP sessions: if the session key
+        // looks like an ACP key but no metadata exists in the store, the
+        // session is stale/dead and the binding should be removed.
+        const sessionDead =
+          !idleExpired &&
+          !maxAgeExpired &&
+          isAcpSessionKey(record.targetSessionKey) &&
+          !readAcpSessionEntry({ sessionKey: record.targetSessionKey })?.acp;
+        if (!idleExpired && !maxAgeExpired && !sessionDead) {
           continue;
         }
+        const reason = idleExpired
+          ? "idle-expired"
+          : maxAgeExpired
+            ? "max-age-expired"
+            : "session-dead";
         manager.unbindConversation({
           conversationId: record.conversationId,
-          reason: idleExpired ? "idle-expired" : "max-age-expired",
+          reason,
           sendFarewell: false,
         });
       }

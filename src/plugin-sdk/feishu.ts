@@ -100,3 +100,5 @@ export {
   resolveThreadBindingMaxAgeMsForChannel,
   resolveThreadBindingSpawnPolicy,
 } from "../channels/thread-bindings-policy.js";
+export { isAcpSessionKey } from "../sessions/session-key-utils.js";
+export { readAcpSessionEntry } from "../acp/runtime/session-meta.js";
