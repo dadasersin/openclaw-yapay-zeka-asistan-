@@ -212,13 +212,13 @@ export function resolveModelWithRegistry(params: {
       provider,
       model: {
         id: modelId,
-        name: modelId,
-        api: providerConfig?.api ?? "openai-responses",
+        name: configuredModel?.name ?? modelId,
+        api: configuredModel?.api ?? providerConfig?.api ?? "openai-responses",
         provider,
         baseUrl: providerConfig?.baseUrl,
         reasoning: configuredModel?.reasoning ?? false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        input: configuredModel?.input ?? ["text"],
+        cost: configuredModel?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow:
           configuredModel?.contextWindow ??
           providerConfig?.models?.[0]?.contextWindow ??
@@ -229,6 +229,8 @@ export function resolveModelWithRegistry(params: {
           DEFAULT_CONTEXT_TOKENS,
         headers:
           providerHeaders || modelHeaders ? { ...providerHeaders, ...modelHeaders } : undefined,
+        // Preserve compat settings for provider-specific quirks (e.g., supportsStore for LiteLLM)
+        compat: configuredModel?.compat,
       } as Model<Api>,
     });
   }
