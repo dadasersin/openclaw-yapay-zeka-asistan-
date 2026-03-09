@@ -7,6 +7,34 @@ import {
 } from "./subagent-registry.js";
 
 const callGatewayMock = vi.fn();
+type TestConfig = {
+  session: {
+    mainKey: string;
+    scope: "per-sender";
+    agentToAgent: {
+      maxPingPongTurns: number;
+      allowChannelBoundAnnounce?: boolean;
+    };
+  };
+  tools: {
+    sessions: {
+      visibility: "all";
+    };
+  };
+};
+
+const defaultConfig: TestConfig = {
+  session: {
+    mainKey: "main",
+    scope: "per-sender" as const,
+    agentToAgent: { maxPingPongTurns: 2 },
+  },
+  tools: {
+    // Keep sessions tools permissive in this suite; dedicated visibility tests cover defaults.
+    sessions: { visibility: "all" as const },
+  },
+};
+let configOverride: TestConfig = defaultConfig;
 vi.mock("../gateway/call.js", () => ({
   callGateway: (opts: unknown) => callGatewayMock(opts),
 }));
@@ -15,22 +43,14 @@ vi.mock("../config/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config/config.js")>();
   return {
     ...actual,
-    loadConfig: () => ({
-      session: {
-        mainKey: "main",
-        scope: "per-sender",
-        agentToAgent: { maxPingPongTurns: 2 },
-      },
-      tools: {
-        // Keep sessions tools permissive in this suite; dedicated visibility tests cover defaults.
-        sessions: { visibility: "all" },
-      },
-    }),
+    loadConfig: () => configOverride,
     resolveGatewayPort: () => 18789,
   };
 });
 
 import "./test-helpers/fast-core-tools.js";
+import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import { createOpenClawTools } from "./openclaw-tools.js";
 
 const waitForCalls = async (getCount: () => number, count: number, timeoutMs = 2000) => {
@@ -50,7 +70,61 @@ describe("sessions tools", () => {
   });
 
   beforeEach(() => {
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "discord",
+          source: "test",
+          plugin: {
+            id: "discord",
+            meta: {
+              id: "discord",
+              label: "Discord",
+              selectionLabel: "Discord",
+              docsPath: "/channels/discord",
+              blurb: "Discord test stub.",
+            },
+            capabilities: { chatTypes: ["direct", "channel", "thread"] },
+            config: {
+              listAccountIds: () => ["default"],
+              resolveAccount: () => ({}),
+            },
+          },
+        },
+        {
+          pluginId: "slack",
+          source: "test",
+          plugin: {
+            id: "slack",
+            meta: {
+              id: "slack",
+              label: "Slack",
+              selectionLabel: "Slack",
+              docsPath: "/channels/slack",
+              blurb: "Slack test stub.",
+              preferSessionLookupForAnnounceTarget: true,
+            },
+            capabilities: { chatTypes: ["direct", "channel", "thread"] },
+            config: {
+              listAccountIds: () => ["default"],
+              resolveAccount: () => ({}),
+            },
+          },
+        },
+      ]),
+    );
     callGatewayMock.mockClear();
+    configOverride = {
+      ...defaultConfig,
+      session: {
+        ...defaultConfig.session,
+        agentToAgent: { ...defaultConfig.session.agentToAgent },
+      },
+      tools: {
+        ...defaultConfig.tools,
+        sessions: { ...defaultConfig.tools.sessions },
+      },
+    };
   });
 
   it("uses number (not integer) in tool schemas for Gemini compatibility", () => {
@@ -563,6 +637,11 @@ describe("sessions tools", () => {
           ],
         };
       }
+      if (request.method === "sessions.list") {
+        return {
+          sessions: [{ key: "main", displayName: "main" }],
+        };
+      }
       if (request.method === "send") {
         sendCallCount += 1;
         return { messageId: "m1" };
@@ -652,6 +731,178 @@ describe("sessions tools", () => {
     expect(sendCallCount).toBe(0);
   });
 
+  it("sessions_send fire-and-forget does not block primary delivery on announce precheck", async () => {
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let resolveSessionsList:
+      | ((value: { sessions: Array<Record<string, unknown>> }) => void)
+      | undefined;
+    const pendingSessionsList = new Promise<{ sessions: Array<Record<string, unknown>> }>(
+      (resolve) => {
+        resolveSessionsList = resolve;
+      },
+    );
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        return {
+          runId: "run-precheck",
+          status: "accepted",
+          acceptedAt: 2001,
+        };
+      }
+      if (request.method === "sessions.list") {
+        return await pendingSessionsList;
+      }
+      if (request.method === "send") {
+        throw new Error("send should not be called for default channel-bound targets");
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    let settled = false;
+    const firePromise = tool
+      .execute("call-precheck-not-critical", {
+        sessionKey: "main",
+        message: "ping",
+        timeoutSeconds: 0,
+      })
+      .then((value) => {
+        settled = true;
+        return value;
+      });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent").length, 1);
+    await vi.waitFor(() => {
+      expect(settled).toBe(true);
+    });
+
+    const fire = await firePromise;
+    expect(fire.details).toMatchObject({
+      status: "accepted",
+      runId: "run-precheck",
+    });
+    expect(calls.filter((call) => call.method === "agent.wait")).toHaveLength(0);
+
+    resolveSessionsList?.({
+      sessions: [
+        {
+          key: "main",
+          deliveryContext: {
+            channel: "discord",
+            to: "channel:target",
+          },
+        },
+      ],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls.filter((call) => call.method === "agent")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "send")).toHaveLength(0);
+  });
+
+  it("sessions_send sync wait path does not block primary delivery on announce precheck", async () => {
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let resolveSessionsList:
+      | ((value: { sessions: Array<Record<string, unknown>> }) => void)
+      | undefined;
+    const pendingSessionsList = new Promise<{ sessions: Array<Record<string, unknown>> }>(
+      (resolve) => {
+        resolveSessionsList = resolve;
+      },
+    );
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        return {
+          runId: "run-precheck-sync",
+          status: "accepted",
+          acceptedAt: 2002,
+        };
+      }
+      if (request.method === "agent.wait") {
+        return { status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        return {
+          messages: [
+            { role: "assistant", content: [{ type: "text", text: "done" }], timestamp: 20 },
+          ],
+        };
+      }
+      if (request.method === "sessions.list") {
+        return await pendingSessionsList;
+      }
+      if (request.method === "send") {
+        throw new Error("send should not be called for default channel-bound targets");
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    let settled = false;
+    const syncPromise = tool
+      .execute("call-precheck-not-critical-sync", {
+        sessionKey: "main",
+        message: "ping",
+        timeoutSeconds: 1,
+      })
+      .then((value) => {
+        settled = true;
+        return value;
+      });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent.wait").length, 1);
+    await waitForCalls(() => calls.filter((call) => call.method === "chat.history").length, 1);
+    await vi.waitFor(() => {
+      expect(settled).toBe(true);
+    });
+
+    const syncResult = await syncPromise;
+    expect(syncResult.details).toMatchObject({
+      status: "ok",
+      runId: "run-precheck-sync",
+      reply: "done",
+      delivery: { status: "pending", mode: "announce" },
+    });
+
+    resolveSessionsList?.({
+      sessions: [
+        {
+          key: "main",
+          deliveryContext: {
+            channel: "discord",
+            to: "channel:target",
+          },
+        },
+      ],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls.filter((call) => call.method === "agent")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "send")).toHaveLength(0);
+  });
+
   it("sessions_send resolves sessionId inputs", async () => {
     const sessionId = "sess-send";
     const targetKey = "agent:main:discord:channel:123";
@@ -701,6 +952,10 @@ describe("sessions tools", () => {
   });
 
   it("sessions_send runs ping-pong then announces", async () => {
+    configOverride.session.agentToAgent = {
+      maxPingPongTurns: 2,
+      allowChannelBoundAnnounce: true,
+    };
     const calls: Array<{ method?: string; params?: unknown }> = [];
     let agentCallCount = 0;
     let lastWaitedRunId: string | undefined;
@@ -815,6 +1070,747 @@ describe("sessions tools", () => {
       channel: "discord",
       message: "announce now",
     });
+  });
+
+  it("sessions_send skips announce flow for channel-bound targets by default", async () => {
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "ping" ? "done" : "unexpected";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "send") {
+        throw new Error("send should not be called when announce flow is disabled");
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-channel-bound-default", {
+      sessionKey: "discord:group:target",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "skipped", mode: "none" },
+    });
+    expect(calls.filter((call) => call.method === "agent")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "agent.wait")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "chat.history")).toHaveLength(1);
+    const announceCall = calls.find(
+      (call) =>
+        call.method === "agent" &&
+        (call.params as { message?: string } | undefined)?.message ===
+          "Agent-to-agent announce step.",
+    );
+    expect(announceCall).toBeUndefined();
+  });
+
+  it("sessions_send suppresses announce flow when channel target is resolved from delivery context", async () => {
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "ping" ? "done" : "unexpected";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "sessions.list") {
+        return {
+          sessions: [
+            {
+              key: "main",
+              deliveryContext: {
+                channel: "discord",
+                to: "channel:target",
+              },
+            },
+          ],
+        };
+      }
+      if (request.method === "send") {
+        throw new Error("send should not be called when announce flow is suppressed");
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-delivery-context-default", {
+      sessionKey: "main",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "skipped", mode: "none" },
+    });
+    expect(calls.filter((call) => call.method === "sessions.list")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "agent")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "agent.wait")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "chat.history")).toHaveLength(1);
+    const announceCall = calls.find(
+      (call) =>
+        call.method === "agent" &&
+        (call.params as { message?: string } | undefined)?.message ===
+          "Agent-to-agent announce step.",
+    );
+    expect(announceCall).toBeUndefined();
+  });
+
+  it("sessions_send skips announce flow when announce target classification is unknown", async () => {
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    let sessionsListCallCount = 0;
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "Agent-to-agent announce step." ? "announce now" : "done";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "sessions.list") {
+        sessionsListCallCount += 1;
+        if (sessionsListCallCount === 1) {
+          return { sessions: [] };
+        }
+        return {
+          sessions: [
+            {
+              key: "main",
+              deliveryContext: {
+                channel: "discord",
+                to: "channel:target",
+              },
+            },
+          ],
+        };
+      }
+      if (request.method === "send") {
+        throw new Error(
+          "send should not be called when announce target was unknown during pre-check",
+        );
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-fail-closed-unknown", {
+      sessionKey: "main",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "skipped", mode: "none" },
+    });
+    expect(calls.filter((call) => call.method === "sessions.list")).toHaveLength(1);
+
+    const announceCall = calls.find(
+      (call) =>
+        call.method === "agent" &&
+        (call.params as { message?: string } | undefined)?.message ===
+          "Agent-to-agent announce step.",
+    );
+    expect(announceCall).toBeUndefined();
+    expect(calls.filter((call) => call.method === "send")).toHaveLength(0);
+  });
+
+  it("sessions_send keeps no_external_target announce flow internal only", async () => {
+    configOverride.session.agentToAgent = {
+      ...configOverride.session.agentToAgent,
+      maxPingPongTurns: 0,
+    };
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "Agent-to-agent announce step." ? "announce now" : "done";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "sessions.list") {
+        return {
+          sessions: [{ key: "main", displayName: "main" }],
+        };
+      }
+      if (request.method === "send") {
+        throw new Error("send should not be called for no_external_target sessions");
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-no-external-target", {
+      sessionKey: "main",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "pending", mode: "announce" },
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent").length, 2);
+    expect(calls.filter((call) => call.method === "sessions.list")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "send")).toHaveLength(0);
+
+    const announceCall = calls.find(
+      (call) =>
+        call.method === "agent" &&
+        (call.params as { message?: string } | undefined)?.message ===
+          "Agent-to-agent announce step.",
+    );
+    expect(announceCall).toBeDefined();
+  });
+
+  it("sessions_send can re-enable channel-bound announce flow and strips NO_REPLY", async () => {
+    configOverride.session.agentToAgent = {
+      maxPingPongTurns: 0,
+      allowChannelBoundAnnounce: true,
+    };
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    let sendParams: { to?: string; channel?: string; message?: string } = {};
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply =
+          params?.message === "Agent-to-agent announce step." ? "announce now NO_REPLY" : "done";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "send") {
+        const params = request.params as
+          | { to?: string; channel?: string; message?: string }
+          | undefined;
+        sendParams = {
+          to: params?.to,
+          channel: params?.channel,
+          message: params?.message,
+        };
+        return { messageId: "m-announce" };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-channel-bound-override", {
+      sessionKey: "discord:group:target",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "pending", mode: "announce" },
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent").length, 2);
+    await waitForCalls(() => calls.filter((call) => call.method === "send").length, 1);
+
+    expect(sendParams).toMatchObject({
+      to: "channel:target",
+      channel: "discord",
+      message: "announce now",
+    });
+  });
+
+  it("sessions_send preserves opt-in announce fallback when prefer-lookup target lookup misses", async () => {
+    configOverride.session.agentToAgent = {
+      maxPingPongTurns: 0,
+      allowChannelBoundAnnounce: true,
+    };
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    let sendParams: { to?: string; channel?: string; message?: string } = {};
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-slack-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "Agent-to-agent announce step." ? "announce now" : "done";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-slack-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "sessions.list") {
+        return { sessions: [] };
+      }
+      if (request.method === "send") {
+        const params = request.params as
+          | { to?: string; channel?: string; message?: string }
+          | undefined;
+        sendParams = {
+          to: params?.to,
+          channel: params?.channel,
+          message: params?.message,
+        };
+        return { messageId: "m-slack-announce" };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-channel-bound-override-slack-miss", {
+      sessionKey: "slack:channel:C123",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "pending", mode: "announce" },
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent").length, 2);
+    await waitForCalls(() => calls.filter((call) => call.method === "send").length, 1);
+
+    expect(calls.filter((call) => call.method === "sessions.list")).toHaveLength(1);
+    expect(sendParams).toMatchObject({
+      to: "channel:C123",
+      channel: "slack",
+      message: "announce now",
+    });
+  });
+
+  it("sessions_send preserves opt-in announce fallback when prefer-lookup target lookup errors", async () => {
+    configOverride.session.agentToAgent = {
+      maxPingPongTurns: 0,
+      allowChannelBoundAnnounce: true,
+    };
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    let sendParams: { to?: string; channel?: string; message?: string } = {};
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-slack-error-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "Agent-to-agent announce step." ? "announce now" : "done";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-slack-error-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "sessions.list") {
+        throw new Error("stale listing");
+      }
+      if (request.method === "send") {
+        const params = request.params as
+          | { to?: string; channel?: string; message?: string }
+          | undefined;
+        sendParams = {
+          to: params?.to,
+          channel: params?.channel,
+          message: params?.message,
+        };
+        return { messageId: "m-slack-announce-error" };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-channel-bound-override-slack-error", {
+      sessionKey: "slack:channel:C123",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "pending", mode: "announce" },
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent").length, 2);
+    await waitForCalls(() => calls.filter((call) => call.method === "send").length, 1);
+
+    expect(calls.filter((call) => call.method === "sessions.list")).toHaveLength(1);
+    expect(sendParams).toMatchObject({
+      to: "channel:C123",
+      channel: "slack",
+      message: "announce now",
+    });
+  });
+
+  it("sessions_send preserves opt-in announce fallback when prefer-lookup target matches without delivery fields", async () => {
+    configOverride.session.agentToAgent = {
+      maxPingPongTurns: 0,
+      allowChannelBoundAnnounce: true,
+    };
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    let sendParams: { to?: string; channel?: string; message?: string } = {};
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-slack-empty-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "Agent-to-agent announce step." ? "announce now" : "done";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-slack-empty-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "sessions.list") {
+        return {
+          sessions: [{ key: "slack:channel:C123", displayName: "Slack target" }],
+        };
+      }
+      if (request.method === "send") {
+        const params = request.params as
+          | { to?: string; channel?: string; message?: string }
+          | undefined;
+        sendParams = {
+          to: params?.to,
+          channel: params?.channel,
+          message: params?.message,
+        };
+        return { messageId: "m-slack-announce-empty" };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-channel-bound-override-slack-empty", {
+      sessionKey: "slack:channel:C123",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "pending", mode: "announce" },
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent").length, 2);
+    await waitForCalls(() => calls.filter((call) => call.method === "send").length, 1);
+
+    expect(calls.filter((call) => call.method === "sessions.list")).toHaveLength(1);
+    expect(sendParams).toMatchObject({
+      to: "channel:C123",
+      channel: "slack",
+      message: "announce now",
+    });
+  });
+
+  it("sessions_send keeps opt-in announce internal when prefer-lookup target has partial routing data", async () => {
+    configOverride.session.agentToAgent = {
+      maxPingPongTurns: 0,
+      allowChannelBoundAnnounce: true,
+    };
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    let agentCallCount = 0;
+    let lastWaitedRunId: string | undefined;
+    const replyByRunId = new Map<string, string>();
+
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        agentCallCount += 1;
+        const runId = `run-slack-partial-${agentCallCount}`;
+        const params = request.params as { message?: string } | undefined;
+        const reply = params?.message === "Agent-to-agent announce step." ? "announce now" : "done";
+        replyByRunId.set(runId, reply);
+        return {
+          runId,
+          status: "accepted",
+        };
+      }
+      if (request.method === "agent.wait") {
+        const params = request.params as { runId?: string } | undefined;
+        lastWaitedRunId = params?.runId;
+        return { runId: params?.runId ?? "run-slack-partial-1", status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        const text = (lastWaitedRunId && replyByRunId.get(lastWaitedRunId)) ?? "";
+        return {
+          messages: [{ role: "assistant", content: [{ type: "text", text }], timestamp: 20 }],
+        };
+      }
+      if (request.method === "sessions.list") {
+        return {
+          sessions: [{ key: "slack:channel:C123", lastChannel: "slack" }],
+        };
+      }
+      if (request.method === "send") {
+        throw new Error("send should not be called when routing data is partial");
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "discord:group:req",
+      agentChannel: "discord",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-channel-bound-override-slack-partial", {
+      sessionKey: "slack:channel:C123",
+      message: "ping",
+      timeoutSeconds: 1,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      reply: "done",
+      delivery: { status: "pending", mode: "announce" },
+    });
+
+    await waitForCalls(() => calls.filter((call) => call.method === "agent").length, 2);
+
+    expect(calls.filter((call) => call.method === "sessions.list")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "send")).toHaveLength(0);
+
+    const announceCall = calls.find(
+      (call) =>
+        call.method === "agent" &&
+        (call.params as { message?: string } | undefined)?.message ===
+          "Agent-to-agent announce step.",
+    );
+    expect(announceCall).toBeDefined();
   });
 
   it("subagents lists active and recent runs", async () => {

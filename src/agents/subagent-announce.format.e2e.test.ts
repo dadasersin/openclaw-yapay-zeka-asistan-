@@ -446,24 +446,19 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    const call = sendSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
     const rawMessage = call?.params?.message;
     const msg = typeof rawMessage === "string" ? rawMessage : "";
     expect(call?.params?.channel).toBe("discord");
     expect(call?.params?.to).toBe("channel:12345");
     expect(call?.params?.sessionKey).toBe("agent:main:main");
-    expect(call?.params?.inputProvenance).toMatchObject({
-      kind: "inter_session",
-      sourceSessionKey: "agent:main:subagent:test",
-      sourceTool: "subagent_announce",
-    });
     expect(msg).toContain("final answer: 2");
     expect(msg).not.toContain("✅ Subagent");
   });
 
-  it("keeps direct completion announce delivery immediate even when sibling counters are non-zero", async () => {
+  it("suppresses direct completion announce delivery when sibling counters stay non-zero", async () => {
     sessionStore = {
       "agent:main:subagent:test": {
         sessionId: "child-session-self-pending",
@@ -497,9 +492,9 @@ describe("subagent announce formatting", () => {
     expect(sendSpy).not.toHaveBeenCalled();
     expect(agentSpy).toHaveBeenCalledTimes(1);
     const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
-    expect(call?.params?.deliver).toBe(true);
-    expect(call?.params?.channel).toBe("discord");
-    expect(call?.params?.to).toBe("channel:12345");
+    expect(call?.params?.deliver).toBe(false);
+    expect(call?.params?.channel).toBeUndefined();
+    expect(call?.params?.to).toBeUndefined();
   });
 
   it("suppresses completion delivery when subagent reply is ANNOUNCE_SKIP", async () => {
@@ -567,14 +562,14 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    const call = sendSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
     expect(call?.params?.message).toContain("final summary from prior completion");
   });
 
   it("retries completion direct agent announce on transient channel-unavailable errors", async () => {
-    agentSpy
+    sendSpy
       .mockRejectedValueOnce(new Error("Error: No active WhatsApp Web listener (account: default)"))
       .mockRejectedValueOnce(new Error("UNAVAILABLE: listener reconnecting"))
       .mockResolvedValueOnce({ runId: "run-main", status: "ok" });
@@ -591,12 +586,12 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(agentSpy).toHaveBeenCalledTimes(3);
-    expect(sendSpy).not.toHaveBeenCalled();
+    expect(sendSpy).toHaveBeenCalledTimes(3);
+    expect(agentSpy).not.toHaveBeenCalled();
   });
 
   it("does not retry completion direct agent announce on permanent channel errors", async () => {
-    agentSpy.mockRejectedValueOnce(new Error("unsupported channel: telegram"));
+    sendSpy.mockRejectedValueOnce(new Error("unsupported channel: telegram"));
 
     const didAnnounce = await runSubagentAnnounceFlow({
       childSessionKey: "agent:main:subagent:test",
@@ -610,8 +605,8 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(false);
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    expect(sendSpy).not.toHaveBeenCalled();
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
   });
 
   it("retries direct agent announce on transient channel-unavailable errors", async () => {
@@ -635,7 +630,7 @@ describe("subagent announce formatting", () => {
     expect(sendSpy).not.toHaveBeenCalled();
   });
 
-  it("delivers completion-mode announces immediately even when sibling runs are still active", async () => {
+  it("suppresses non-bound completion delivery while sibling runs are still active", async () => {
     sessionStore = {
       "agent:main:subagent:test": {
         sessionId: "child-session-coordinated",
@@ -667,9 +662,9 @@ describe("subagent announce formatting", () => {
     const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
     const rawMessage = call?.params?.message;
     const msg = typeof rawMessage === "string" ? rawMessage : "";
-    expect(call?.params?.deliver).toBe(true);
-    expect(call?.params?.channel).toBe("discord");
-    expect(call?.params?.to).toBe("channel:12345");
+    expect(call?.params?.deliver).toBe(false);
+    expect(call?.params?.channel).toBeUndefined();
+    expect(call?.params?.to).toBeUndefined();
     expect(msg).not.toContain("There are still");
     expect(msg).not.toContain("wait for the remaining results");
   });
@@ -728,8 +723,10 @@ describe("subagent announce formatting", () => {
     expect(sendSpy).not.toHaveBeenCalled();
     expect(agentSpy).toHaveBeenCalledTimes(1);
     const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
+    expect(call?.params?.deliver).toBe(true);
     expect(call?.params?.channel).toBe("discord");
     expect(call?.params?.to).toBe("channel:thread-bound-1");
+    expect(call?.params?.to).not.toBe("channel:12345");
   });
 
   it("does not duplicate to main channel when two active bound sessions complete from the same requester channel", async () => {
@@ -827,12 +824,17 @@ describe("subagent announce formatting", () => {
     expect(agentSpy).toHaveBeenCalledTimes(2);
 
     const directTargets = agentSpy.mock.calls.map(
-      (call) => (call?.[0] as { params?: { to?: string } })?.params?.to,
+      (call) => (call?.[0] as { params?: { to?: string; deliver?: boolean } })?.params,
     );
     expect(directTargets).toEqual(
-      expect.arrayContaining(["channel:thread-child-a", "channel:thread-child-b"]),
+      expect.arrayContaining([
+        expect.objectContaining({ to: "channel:thread-child-a", deliver: true }),
+        expect.objectContaining({ to: "channel:thread-child-b", deliver: true }),
+      ]),
     );
-    expect(directTargets).not.toContain("channel:main-parent-channel");
+    expect(directTargets).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ to: "channel:main-parent-channel" })]),
+    );
   });
 
   it("includes completion status details for error and timeout outcomes", async () => {
@@ -859,6 +861,7 @@ describe("subagent announce formatting", () => {
 
     for (const testCase of cases) {
       agentSpy.mockClear();
+      sendSpy.mockClear();
       sessionStore = {
         "agent:main:subagent:test": {
           sessionId: testCase.childSessionId,
@@ -885,9 +888,9 @@ describe("subagent announce formatting", () => {
       });
 
       expect(didAnnounce).toBe(true);
-      expect(sendSpy).not.toHaveBeenCalled();
-      expect(agentSpy).toHaveBeenCalledTimes(1);
-      const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      expect(agentSpy).not.toHaveBeenCalled();
+      const call = sendSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
       const rawMessage = call?.params?.message;
       const msg = typeof rawMessage === "string" ? rawMessage : "";
       expect(msg).toContain(testCase.expectedStatus);
@@ -952,9 +955,9 @@ describe("subagent announce formatting", () => {
       });
 
       expect(didAnnounce).toBe(true);
-      expect(sendSpy).not.toHaveBeenCalled();
-      expect(agentSpy).toHaveBeenCalledTimes(1);
-      const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      expect(agentSpy).not.toHaveBeenCalled();
+      const call = sendSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
       expect(call?.params?.channel).toBe("discord");
       expect(call?.params?.to).toBe("channel:12345");
       expect(call?.params?.threadId).toBe(testCase.expectedThreadId);
@@ -1055,9 +1058,9 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    const call = sendSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
     expect(call?.params?.channel).toBe("telegram");
     expect(call?.params?.to).toBe("123");
     expect(call?.params?.threadId).toBe("42");
@@ -1181,9 +1184,9 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    const call = sendSpy.mock.calls[0]?.[0] as { params?: Record<string, unknown> };
     expect(call?.params?.channel).toBe("discord");
     expect(call?.params?.to).toBe("channel:12345");
     expect(call?.params?.threadId).toBeUndefined();
@@ -1328,9 +1331,9 @@ describe("subagent announce formatting", () => {
         queueDebounceMs: 0,
       },
     };
-    agentSpy
+    sendSpy
       .mockRejectedValueOnce(new Error("direct delivery unavailable"))
-      .mockResolvedValueOnce({ runId: "run-main", status: "ok" });
+      .mockResolvedValueOnce({ runId: "send-main", status: "ok" });
 
     const didAnnounce = await runSubagentAnnounceFlow({
       childSessionKey: "agent:main:subagent:worker",
@@ -1342,13 +1345,13 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(2);
-    expect(agentSpy.mock.calls[0]?.[0]).toMatchObject({
-      method: "agent",
-      params: { sessionKey: "agent:main:main", channel: "whatsapp", to: "+1555", deliver: true },
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy.mock.calls[0]?.[0]).toMatchObject({
+      method: "send",
+      params: { sessionKey: "agent:main:main", channel: "whatsapp", to: "+1555" },
     });
-    expect(agentSpy.mock.calls[1]?.[0]).toMatchObject({
+    expect(agentSpy.mock.calls[0]?.[0]).toMatchObject({
       method: "agent",
       params: { sessionKey: "agent:main:main" },
     });
@@ -1410,15 +1413,19 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    expect(agentSpy.mock.calls[0]?.[0]).toMatchObject({
-      method: "agent",
+    expect(subagentRegistryMock.countPendingDescendantRunsExcludingRun).toHaveBeenCalledWith(
+      "agent:main:main",
+      "run-completion-explicit-route",
+    );
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    expect(sendSpy.mock.calls[0]?.[0]).toMatchObject({
+      method: "send",
       params: {
         sessionKey: "agent:main:main",
         channel: "discord",
         to: "channel:12345",
-        deliver: true,
+        accountId: "acct-1",
       },
     });
   });
@@ -1433,7 +1440,7 @@ describe("subagent announce formatting", () => {
         lastTo: "+1555",
       },
     };
-    agentSpy.mockRejectedValueOnce(new Error("direct delivery unavailable"));
+    sendSpy.mockRejectedValueOnce(new Error("direct delivery unavailable"));
 
     const didAnnounce = await runSubagentAnnounceFlow({
       childSessionKey: "agent:main:subagent:worker",
@@ -1445,8 +1452,8 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(false);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
   });
 
   it("uses assistant output for completion-mode when latest assistant text exists", async () => {
@@ -1475,9 +1482,9 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    const call = sendSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
     const msg = call?.params?.message as string;
     expect(msg).toContain("assistant completion text");
     expect(msg).not.toContain("old tool output");
@@ -1509,9 +1516,9 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    const call = sendSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
     const msg = call?.params?.message as string;
     expect(msg).toContain("tool output only");
   });
@@ -1538,9 +1545,9 @@ describe("subagent announce formatting", () => {
     });
 
     expect(didAnnounce).toBe(true);
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const call = agentSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(agentSpy).not.toHaveBeenCalled();
+    const call = sendSpy.mock.calls[0]?.[0] as { params?: { message?: string } };
     const msg = call?.params?.message as string;
     expect(msg).toContain("(no output)");
     expect(msg).not.toContain("user prompt should not be announced");
