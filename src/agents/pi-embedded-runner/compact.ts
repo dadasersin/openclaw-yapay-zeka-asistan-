@@ -49,6 +49,7 @@ import {
   validateGeminiTurns,
 } from "../pi-embedded-helpers.js";
 import { createPreparedEmbeddedPiSettingsManager } from "../pi-project-settings.js";
+import { wrapMcpToolDefinitions } from "../pi-tool-definition-adapter.js";
 import { createOpenClawCodingTools } from "../pi-tools.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
 import { resolveSandboxContext } from "../sandbox.js";
@@ -597,6 +598,8 @@ export async function compactEmbeddedPiSessionDirect(
       const sessionManager = guardSessionManager(SessionManager.open(params.sessionFile), {
         agentId: sessionAgentId,
         sessionKey: params.sessionKey,
+        sessionId: params.sessionId,
+        cfg: params.config,
         allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
         allowedToolNames,
       });
@@ -628,10 +631,17 @@ export async function compactEmbeddedPiSessionDirect(
         await resourceLoader.reload();
       }
 
-      const { builtInTools, customTools } = splitSdkTools({
+      const { builtInTools, customTools: rawDefs } = splitSdkTools({
         tools,
         sandboxEnabled: !!sandbox?.enabled,
       });
+      const customTools = params.config
+        ? wrapMcpToolDefinitions(rawDefs, {
+            cfg: params.config,
+            agentId: sessionAgentId,
+            sessionId: params.sessionId,
+          })
+        : rawDefs;
 
       const { session } = await createAgentSession({
         cwd: effectiveWorkspace,

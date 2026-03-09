@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FinalizedMsgContext } from "../auto-reply/templating.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type {
@@ -252,6 +253,45 @@ function toInternalInboundMessageHookContextBase(canonical: CanonicalInboundMess
     surface: canonical.surface,
     mediaPath: canonical.mediaPath,
     mediaType: canonical.mediaType,
+  };
+}
+
+/**
+ * Build a minimal CanonicalInboundMessageHookContext from an AgentMessage.
+ * Returns null for non-user messages or messages with no extractable text content.
+ * Used to feed embedded-runner transcript turns into the session sanitization pipeline.
+ */
+export function toCanonicalInboundMessageHookContext(
+  message: import("@mariozechner/pi-agent-core").AgentMessage,
+): CanonicalInboundMessageHookContext | null {
+  const msg = message as { role?: unknown; content?: unknown; timestamp?: unknown };
+  if (msg.role !== "user") {
+    return null;
+  }
+  const rawContent = msg.content;
+  const content =
+    typeof rawContent === "string"
+      ? rawContent
+      : Array.isArray(rawContent)
+        ? rawContent
+            .filter(
+              (c): c is { type: "text"; text: string } =>
+                typeof c === "object" && c !== null && (c as { type?: string }).type === "text",
+            )
+            .map((c) => c.text)
+            .join("\n")
+        : "";
+  if (!content) {
+    return null;
+  }
+  const timestamp = typeof msg.timestamp === "number" ? msg.timestamp : Date.now();
+  return {
+    from: "user",
+    content,
+    channelId: "embedded",
+    isGroup: false,
+    timestamp,
+    messageId: `${timestamp}-${randomUUID().slice(0, 8)}`,
   };
 }
 

@@ -1,4 +1,7 @@
 import type { SessionManager } from "@mariozechner/pi-coding-agent";
+import type { OpenClawConfig } from "../config/config.js";
+import { toCanonicalInboundMessageHookContext } from "../hooks/message-hook-mappers.js";
+import { queueSessionSanitizationWrite } from "../memory/session-sanitization/service.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import {
   applyInputProvenanceToUserMessage,
@@ -22,6 +25,8 @@ export function guardSessionManager(
   opts?: {
     agentId?: string;
     sessionKey?: string;
+    sessionId?: string;
+    cfg?: OpenClawConfig;
     inputProvenance?: InputProvenance;
     allowSyntheticToolResults?: boolean;
     allowedToolNames?: Iterable<string>;
@@ -32,14 +37,39 @@ export function guardSessionManager(
   }
 
   const hookRunner = getGlobalHookRunner();
-  const beforeMessageWrite = hookRunner?.hasHooks("before_message_write")
-    ? (event: { message: import("@mariozechner/pi-agent-core").AgentMessage }) => {
-        return hookRunner.runBeforeMessageWrite(event, {
-          agentId: opts?.agentId,
-          sessionKey: opts?.sessionKey,
-        });
-      }
-    : undefined;
+  // Helper/memory sessions have sessionId starting with "session-memory-" and
+  // sessionKey containing ":session-memory-". Sanitizing their transcript would
+  // re-enqueue the helper prompt itself, spawning recursive background work.
+  const isHelperSession =
+    (opts?.sessionId?.startsWith("session-memory-") ?? false) ||
+    (opts?.sessionKey?.includes(":session-memory-") ?? false);
+  const hasSanitization = !!(opts?.cfg && opts?.agentId && opts?.sessionId && !isHelperSession);
+  const hasHooks = hookRunner?.hasHooks("before_message_write") ?? false;
+  const beforeMessageWrite =
+    hasSanitization || hasHooks
+      ? (event: { message: import("@mariozechner/pi-agent-core").AgentMessage }) => {
+          const result =
+            hasHooks && hookRunner
+              ? hookRunner.runBeforeMessageWrite(event, {
+                  agentId: opts?.agentId,
+                  sessionKey: opts?.sessionKey,
+                })
+              : undefined;
+          if (hasSanitization && !result?.block) {
+            const messageToSanitize = result?.message ?? event.message;
+            const canonical = toCanonicalInboundMessageHookContext(messageToSanitize);
+            if (canonical) {
+              queueSessionSanitizationWrite({
+                cfg: opts!.cfg!,
+                agentId: opts!.agentId!,
+                sessionId: opts!.sessionId,
+                canonical,
+              });
+            }
+          }
+          return result;
+        }
+      : undefined;
 
   const transform = hookRunner?.hasHooks("tool_result_persist")
     ? // oxlint-disable-next-line typescript/no-explicit-any
