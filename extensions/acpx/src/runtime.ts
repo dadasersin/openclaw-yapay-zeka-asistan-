@@ -310,7 +310,22 @@ export class AcpxRuntime implements AcpRuntime {
       // Ignore EPIPE when the child exits before stdin flush completes.
     });
 
-    child.stdin.end(input.text);
+    if (input.attachments && input.attachments.length > 0) {
+      const blocks: unknown[] = [];
+      if (input.text) {
+        blocks.push({ type: "text", text: input.text });
+      }
+      for (const attachment of input.attachments) {
+        if (attachment.mediaType.startsWith("image/")) {
+          blocks.push({ type: "image", mimeType: attachment.mediaType, data: attachment.data });
+        }
+        // Non-image attachments (documents, PDFs, audio, video) are not supported
+        // as binary content blocks in the ACP protocol — skip silently.
+      }
+      child.stdin.end(JSON.stringify(blocks));
+    } else {
+      child.stdin.end(input.text);
+    }
 
     let stderr = "";
     child.stderr.on("data", (chunk) => {
