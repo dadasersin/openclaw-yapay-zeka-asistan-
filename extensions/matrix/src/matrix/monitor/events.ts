@@ -1,52 +1,14 @@
-import type { MatrixClient } from "@vector-im/matrix-bot-sdk";
 import type { PluginRuntime, RuntimeLogger } from "openclaw/plugin-sdk/matrix";
+import type { CoreConfig } from "../../types.js";
 import type { MatrixAuth } from "../client.js";
-import { sendReadReceiptMatrix } from "../send.js";
+import { formatMatrixEncryptedEventDisabledWarning } from "../encryption-guidance.js";
+import type { MatrixClient } from "../sdk.js";
 import type { MatrixRawEvent } from "./types.js";
 import { EventType } from "./types.js";
-
-const matrixMonitorListenerRegistry = (() => {
-  // Prevent duplicate listener registration when both bundled and extension
-  // paths attempt to start monitors against the same shared client.
-  const registeredClients = new WeakSet<object>();
-  return {
-    tryRegister(client: object): boolean {
-      if (registeredClients.has(client)) {
-        return false;
-      }
-      registeredClients.add(client);
-      return true;
-    },
-  };
-})();
-
-function createSelfUserIdResolver(client: Pick<MatrixClient, "getUserId">) {
-  let selfUserId: string | undefined;
-  let selfUserIdLookup: Promise<string | undefined> | undefined;
-
-  return async (): Promise<string | undefined> => {
-    if (selfUserId) {
-      return selfUserId;
-    }
-    if (!selfUserIdLookup) {
-      selfUserIdLookup = client
-        .getUserId()
-        .then((userId) => {
-          selfUserId = userId;
-          return userId;
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!selfUserId) {
-            selfUserIdLookup = undefined;
-          }
-        });
-    }
-    return await selfUserIdLookup;
-  };
-}
+import { createMatrixVerificationEventRouter } from "./verification-events.js";
 
 export function registerMatrixMonitorEvents(params: {
+  cfg: CoreConfig;
   client: MatrixClient;
   auth: MatrixAuth;
   logVerboseMessage: (message: string) => void;
@@ -56,12 +18,8 @@ export function registerMatrixMonitorEvents(params: {
   formatNativeDependencyHint: PluginRuntime["system"]["formatNativeDependencyHint"];
   onRoomMessage: (roomId: string, event: MatrixRawEvent) => void | Promise<void>;
 }): void {
-  if (!matrixMonitorListenerRegistry.tryRegister(params.client)) {
-    params.logVerboseMessage("matrix: skipping duplicate listener registration for client");
-    return;
-  }
-
   const {
+    cfg,
     client,
     auth,
     logVerboseMessage,
@@ -71,26 +29,16 @@ export function registerMatrixMonitorEvents(params: {
     formatNativeDependencyHint,
     onRoomMessage,
   } = params;
+  const routeVerificationEvent = createMatrixVerificationEventRouter({
+    client,
+    logVerboseMessage,
+  });
 
-  const resolveSelfUserId = createSelfUserIdResolver(client);
   client.on("room.message", (roomId: string, event: MatrixRawEvent) => {
-    const eventId = event?.event_id;
-    const senderId = event?.sender;
-    if (eventId && senderId) {
-      void (async () => {
-        const currentSelfUserId = await resolveSelfUserId();
-        if (!currentSelfUserId || senderId === currentSelfUserId) {
-          return;
-        }
-        await sendReadReceiptMatrix(roomId, eventId, client).catch((err) => {
-          logVerboseMessage(
-            `matrix: early read receipt failed room=${roomId} id=${eventId}: ${String(err)}`,
-          );
-        });
-      })();
+    if (routeVerificationEvent(roomId, event)) {
+      return;
     }
-
-    onRoomMessage(roomId, event);
+    void onRoomMessage(roomId, event);
   });
 
   client.on("room.encrypted_event", (roomId: string, event: MatrixRawEvent) => {
@@ -141,8 +89,7 @@ export function registerMatrixMonitorEvents(params: {
       );
       if (auth.encryption !== true && !warnedEncryptedRooms.has(roomId)) {
         warnedEncryptedRooms.add(roomId);
-        const warning =
-          "matrix: encrypted event received without encryption enabled; set channels.matrix.encryption=true and verify the device to decrypt";
+        const warning = formatMatrixEncryptedEventDisabledWarning(cfg, auth.accountId);
         logger.warn(warning, { roomId });
       }
       if (auth.encryption === true && !client.crypto && !warnedCryptoMissingRooms.has(roomId)) {
@@ -164,5 +111,11 @@ export function registerMatrixMonitorEvents(params: {
         `matrix: member event room=${roomId} stateKey=${stateKey} membership=${membership ?? "unknown"}`,
       );
     }
+    if (eventType === EventType.Reaction) {
+      void onRoomMessage(roomId, event);
+      return;
+    }
+
+    routeVerificationEvent(roomId, event);
   });
 }

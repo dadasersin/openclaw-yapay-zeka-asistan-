@@ -1,4 +1,5 @@
-import type { MatrixClient } from "@vector-im/matrix-bot-sdk";
+import { fetchMatrixPollMessageSummary } from "../poll-summary.js";
+import type { MatrixClient } from "../sdk.js";
 import {
   EventType,
   type MatrixMessageSummary,
@@ -66,6 +67,10 @@ export async function fetchEventSummary(
     const raw = (await client.getEvent(roomId, eventId)) as unknown as MatrixRawEvent;
     if (raw.unsigned?.redacted_because) {
       return null;
+    }
+    const pollSummary = await fetchMatrixPollMessageSummary(client, roomId, raw);
+    if (pollSummary) {
+      return pollSummary;
     }
     return summarizeMatrixRawEvent(raw);
   } catch {

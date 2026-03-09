@@ -1,47 +1,68 @@
-import { createMatrixClient } from "./client/create-client.js";
-import { startMatrixClientWithGrace } from "./client/startup.js";
-import { getMatrixLogService } from "./sdk-runtime.js";
+import { getMatrixRuntime } from "../runtime.js";
+import type { CoreConfig } from "../types.js";
+import { getActiveMatrixClient } from "./active-client.js";
+import {
+  createMatrixClient,
+  isBunRuntime,
+  resolveMatrixAuth,
+  resolveMatrixAuthContext,
+} from "./client.js";
+import type { MatrixClient } from "./sdk.js";
 
-type MatrixClientBootstrapAuth = {
-  homeserver: string;
-  userId: string;
-  accessToken: string;
-  encryption?: boolean;
+export type ResolvedRuntimeMatrixClient = {
+  client: MatrixClient;
+  stopOnDone: boolean;
 };
 
-type MatrixCryptoPrepare = {
-  prepare: (rooms?: string[]) => Promise<void>;
-};
+type MatrixResolvedClientHook = (
+  client: MatrixClient,
+  context: { createdForOneOff: boolean },
+) => Promise<void> | void;
 
-type MatrixBootstrapClient = Awaited<ReturnType<typeof createMatrixClient>>;
+export function ensureMatrixNodeRuntime() {
+  if (isBunRuntime()) {
+    throw new Error("Matrix support requires Node (bun runtime not supported)");
+  }
+}
 
-export async function createPreparedMatrixClient(opts: {
-  auth: MatrixClientBootstrapAuth;
+export async function resolveRuntimeMatrixClient(opts: {
+  client?: MatrixClient;
   timeoutMs?: number;
-  accountId?: string;
-}): Promise<MatrixBootstrapClient> {
-  const client = await createMatrixClient({
-    homeserver: opts.auth.homeserver,
-    userId: opts.auth.userId,
-    accessToken: opts.auth.accessToken,
-    encryption: opts.auth.encryption,
-    localTimeoutMs: opts.timeoutMs,
+  accountId?: string | null;
+  onResolved?: MatrixResolvedClientHook;
+}): Promise<ResolvedRuntimeMatrixClient> {
+  ensureMatrixNodeRuntime();
+  if (opts.client) {
+    await opts.onResolved?.(opts.client, { createdForOneOff: false });
+    return { client: opts.client, stopOnDone: false };
+  }
+
+  const cfg = getMatrixRuntime().config.loadConfig() as CoreConfig;
+  const authContext = resolveMatrixAuthContext({
+    cfg,
     accountId: opts.accountId,
   });
-  if (opts.auth.encryption && client.crypto) {
-    try {
-      const joinedRooms = await client.getJoinedRooms();
-      await (client.crypto as MatrixCryptoPrepare).prepare(joinedRooms);
-    } catch {
-      // Ignore crypto prep failures for one-off requests.
-    }
+  const active = getActiveMatrixClient(authContext.accountId);
+  if (active) {
+    await opts.onResolved?.(active, { createdForOneOff: false });
+    return { client: active, stopOnDone: false };
   }
-  await startMatrixClientWithGrace({
-    client,
-    onError: (err: unknown) => {
-      const LogService = getMatrixLogService();
-      LogService.error("MatrixClientBootstrap", "client.start() error:", err);
-    },
+
+  const auth = await resolveMatrixAuth({
+    cfg,
+    accountId: authContext.accountId,
   });
-  return client;
+  const client = await createMatrixClient({
+    homeserver: auth.homeserver,
+    userId: auth.userId,
+    accessToken: auth.accessToken,
+    password: auth.password,
+    deviceId: auth.deviceId,
+    encryption: auth.encryption,
+    localTimeoutMs: opts.timeoutMs,
+    accountId: auth.accountId,
+    autoBootstrapCrypto: false,
+  });
+  await opts.onResolved?.(client, { createdForOneOff: true });
+  return { client, stopOnDone: true };
 }

@@ -1,5 +1,5 @@
-import type { MatrixClient } from "@vector-im/matrix-bot-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { MatrixClient } from "../sdk.js";
 import { EventType } from "./types.js";
 
 let resolveMatrixRoomId: typeof import("./targets.js").resolveMatrixRoomId;
@@ -87,6 +87,26 @@ describe("resolveMatrixRoomId", () => {
     const resolved = await resolveMatrixRoomId(client, userId);
 
     expect(resolved).toBe(roomId);
+  });
+
+  it("accepts nested Matrix user target prefixes", async () => {
+    const userId = "@prefixed:example.org";
+    const roomId = "!prefixed-room:example.org";
+    const client = {
+      getAccountData: vi.fn().mockResolvedValue({
+        [userId]: [roomId],
+      }),
+      getJoinedRooms: vi.fn(),
+      getJoinedRoomMembers: vi.fn(),
+      setAccountData: vi.fn(),
+      resolveRoom: vi.fn(),
+    } as unknown as MatrixClient;
+
+    const resolved = await resolveMatrixRoomId(client, `matrix:user:${userId}`);
+
+    expect(resolved).toBe(roomId);
+    // oxlint-disable-next-line typescript/unbound-method
+    expect(client.resolveRoom).not.toHaveBeenCalled();
   });
 });
 
