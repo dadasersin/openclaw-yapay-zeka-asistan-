@@ -6,7 +6,7 @@ description: |
 
 # Feishu Permission Tool
 
-Single tool `feishu_perm` for managing file/document permissions.
+Single tool `feishu_perm` for managing file/document permissions and ownership transfer.
 
 ## Actions
 
@@ -43,6 +43,29 @@ Returns: members with member_type, member_id, perm, name.
 }
 ```
 
+### Transfer Ownership
+
+```json
+{
+  "action": "transfer",
+  "token": "ABC123",
+  "type": "docx",
+  "member_type": "openid",
+  "member_id": "ou_xxx",
+  "remove_old_owner": false,
+  "old_owner_perm": "view"
+}
+```
+
+Optional transfer fields:
+
+- `need_notification` (default `false`)
+- `remove_old_owner`
+- `stay_put`
+- `old_owner_perm`
+
+Do not combine `remove_old_owner: true` with `old_owner_perm`, since the old owner cannot both be removed and retain a permission.
+
 ## Token Types
 
 | Type       | Description             |
@@ -55,6 +78,8 @@ Returns: members with member_type, member_id, perm, name.
 | `file`     | Uploaded file           |
 | `wiki`     | Wiki node               |
 | `mindnote` | Mind map                |
+| `minutes`  | Meeting minutes         |
+| `slides`   | Slides                  |
 
 ## Member Types
 
@@ -66,6 +91,8 @@ Returns: members with member_type, member_id, perm, name.
 | `unionid`          | User union_id      |
 | `openchat`         | Group chat open_id |
 | `opendepartmentid` | Department open_id |
+
+Ownership transfer only accepts `member_type` values: `email`, `openid`, `userid`.
 
 ## Permission Levels
 
