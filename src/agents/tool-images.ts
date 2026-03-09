@@ -6,6 +6,7 @@ import {
   buildImageResizeSideGrid,
   getImageMetadata,
   IMAGE_REDUCE_QUALITY_STEPS,
+  isImageBackendUnavailable,
   resizeToJpeg,
 } from "../media/image-ops.js";
 import {
@@ -42,6 +43,79 @@ function isTextBlock(block: unknown): block is TextContentBlock {
   }
   const rec = block as Record<string, unknown>;
   return rec.type === "text" && typeof rec.text === "string";
+}
+
+/**
+ * Reads PNG image dimensions from the IHDR chunk without any image library.
+ * PNG stores width+height at fixed offsets in the first 24 bytes.
+ * Returns null if the buffer is not a valid PNG or is too short.
+ */
+function readPngDimensionsFromHeader(buf: Buffer): { width: number; height: number } | null {
+  // PNG signature (8) + IHDR length (4) + "IHDR" (4) + width (4) + height (4) = 24 bytes minimum.
+  if (buf.length < 24) {
+    return null;
+  }
+  // Validate PNG magic bytes.
+  if (buf.toString("binary", 0, 8) !== "\x89PNG\r\n\x1a\n") {
+    return null;
+  }
+  // IHDR must be the first chunk type.
+  if (buf.toString("ascii", 12, 16) !== "IHDR") {
+    return null;
+  }
+  const width = buf.readUInt32BE(16);
+  const height = buf.readUInt32BE(20);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+/**
+ * Reads JPEG image dimensions from the SOF (Start of Frame) marker without any image library.
+ * Scans the JPEG bitstream for the first SOF marker and extracts height/width.
+ * Returns null if the buffer is not a valid JPEG or dimensions cannot be determined.
+ */
+function readJpegDimensionsFromHeader(buf: Buffer): { width: number; height: number } | null {
+  // JPEG magic bytes: FF D8
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) {
+    return null;
+  }
+  let offset = 2;
+  while (offset + 3 < buf.length) {
+    if (buf[offset] !== 0xff) {
+      return null; // Invalid marker alignment
+    }
+    const marker = buf[offset + 1];
+    // Skip padding 0xFF bytes
+    if (marker === 0xff) {
+      offset++;
+      continue;
+    }
+    // SOF markers contain image dimensions: C0–C3, C5–C7, C9–CB, CD–CF
+    // (excludes C4=DHT, C8=JPG extension, CC=DAC which have no dimensions)
+    const isSOF =
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf);
+    if (isSOF) {
+      // SOF layout: FF Cx + length(2) + precision(1) + height(2) + width(2)
+      if (offset + 8 >= buf.length) {
+        return null;
+      }
+      const height = buf.readUInt16BE(offset + 5);
+      const width = buf.readUInt16BE(offset + 7);
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    // Skip to the next segment
+    if (offset + 3 >= buf.length) {
+      return null;
+    }
+    const segLen = buf.readUInt16BE(offset + 2);
+    if (segLen < 2) {
+      return null;
+    }
+    offset += 2 + segLen;
+  }
+  return null;
 }
 
 function inferMimeTypeFromBase64(base64: string): string | undefined {
@@ -180,6 +254,62 @@ async function resizeImageBase64IfNeeded(params: {
       width,
       height,
     };
+  }
+
+  // When no image processing backend is available, attempt to pass through images that are
+  // within limits. For PNGs and JPEGs we can read dimensions directly from their headers
+  // without any library. For other formats (WEBP, GIF, etc.) dimensions are unverifiable
+  // and an actionable error is surfaced rather than silently passing through an image that
+  // may exceed the API dimension cap.
+  //
+  // NOTE: On Bun/macOS, /usr/bin/sips is always available so this branch is never reached
+  // in normal operation there; it is only active on Linux/Windows when sharp fails to load.
+  if (!hasDimensions && isImageBackendUnavailable()) {
+    // Try to read dimensions from the image header without any library.
+    const pngDims = params.mimeType === "image/png" ? readPngDimensionsFromHeader(buf) : null;
+    const jpegDims = params.mimeType === "image/jpeg" ? readJpegDimensionsFromHeader(buf) : null;
+    const headerDims = pngDims ?? jpegDims;
+
+    if (headerDims) {
+      if (headerDims.width > params.maxDimensionPx || headerDims.height > params.maxDimensionPx) {
+        // Dimensions verified from header: image is over-cap but backend cannot resize it.
+        throw new Error(
+          `Image exceeds the ${params.maxDimensionPx}px dimension limit (${headerDims.width}x${headerDims.height}px) and cannot be resized: image processing backend (sharp) is unavailable. Reinstall with a compatible CPU or install libvips.`,
+        );
+      }
+      if (overBytes) {
+        // Explicitly surface oversize-bytes errors here rather than relying on resizeToJpeg
+        // to throw SharpUnavailableError, making the failure path more direct and the message
+        // more actionable.
+        throw new Error(
+          `Image (${formatBytesShort(buf.byteLength)}) exceeds the ${formatBytesShort(params.maxBytes)} byte limit and cannot be resized: image processing backend (sharp) is unavailable. Reinstall with a compatible CPU or install libvips.`,
+        );
+      }
+      log.info(
+        "Image passed through without optimization: sharp backend unavailable, dimensions verified from image header",
+        {
+          label: params.label,
+          fileName: params.fileName,
+          sourceBytes: buf.byteLength,
+          width: headerDims.width,
+          height: headerDims.height,
+          mimeType: params.mimeType,
+        },
+      );
+      return { base64: params.base64, mimeType: params.mimeType, resized: false };
+    }
+
+    // Format does not support header-only dimension parsing (e.g. WEBP, GIF, BMP).
+    // We cannot verify dimensions, so passing through risks opaque downstream API errors
+    // for images that exceed the dimension cap. Surface an actionable error instead.
+    if (overBytes) {
+      throw new Error(
+        `Image (${formatBytesShort(buf.byteLength)}) exceeds the ${formatBytesShort(params.maxBytes)} byte limit and cannot be resized: image processing backend (sharp) is unavailable. Reinstall with a compatible CPU or install libvips.`,
+      );
+    }
+    throw new Error(
+      `Image cannot be processed: format ${params.mimeType ?? "unknown"} requires the image processing backend (sharp) to verify dimensions and resize if needed, but sharp is unavailable. Reinstall with a compatible CPU or install libvips.`,
+    );
   }
 
   const maxDim = hasDimensions ? Math.max(width ?? 0, height ?? 0) : params.maxDimensionPx;
