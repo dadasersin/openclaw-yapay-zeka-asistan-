@@ -61,7 +61,9 @@ export interface InboundMessage {
  * @param body - Raw request body (parsed JSON)
  * @returns Parsed webhook payload, or null if invalid
  */
-export function parseWebhookPayload(body: unknown): KudosityWebhookPayload | null {
+export function parseWebhookPayload(
+  body: unknown,
+): KudosityWebhookPayload | null {
   if (!body || typeof body !== "object") {
     return null;
   }
@@ -106,14 +108,30 @@ export function isSMSStatus(payload: KudosityWebhookPayload): boolean {
  * @param payload - Kudosity webhook payload (must be SMS_INBOUND type)
  * @returns Normalized inbound message for OpenClaw, or null if invalid
  */
-export function toInboundMessage(payload: KudosityWebhookPayload): InboundMessage | null {
+export function toInboundMessage(
+  payload: KudosityWebhookPayload,
+): InboundMessage | null {
   if (!isInboundSMS(payload)) {
     return null;
   }
 
   const data = payload.data as InboundSMSEvent;
 
-  if (!data.sender || !data.recipient || !data.message) {
+  if (
+    typeof data.sender !== "string" ||
+    typeof data.recipient !== "string" ||
+    typeof data.message !== "string" ||
+    typeof data.id !== "string" ||
+    !data.sender ||
+    !data.recipient ||
+    !data.message ||
+    !data.id
+  ) {
+    return null;
+  }
+
+  const timestamp = data.created_at || payload.timestamp;
+  if (!timestamp) {
     return null;
   }
 
@@ -123,7 +141,7 @@ export function toInboundMessage(payload: KudosityWebhookPayload): InboundMessag
     to: data.recipient,
     text: data.message,
     messageId: data.id,
-    timestamp: data.created_at || payload.timestamp,
+    timestamp,
   };
 }
 

@@ -89,7 +89,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
     } catch {
       errorMessage = errorBody;
     }
-    throw new Error(`Kudosity API error (${response.status}): ${errorMessage}`);
+    throw new Error(
+      `Kudosity API error (${response.status}): ${errorMessage}`,
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -99,7 +101,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
  *
  * @see https://developers.kudosity.com/reference/post_v2-sms
  */
-export async function sendSMS(config: KudosityConfig, params: SendSMSParams): Promise<SMSResponse> {
+export async function sendSMS(
+  config: KudosityConfig,
+  params: SendSMSParams,
+): Promise<SMSResponse> {
   const response = await fetch(`${BASE_URL}/v2/sms`, {
     method: "POST",
     headers: buildHeaders(config.apiKey),
@@ -113,7 +118,10 @@ export async function sendSMS(config: KudosityConfig, params: SendSMSParams): Pr
  *
  * @see https://developers.kudosity.com/reference/get_v2-sms-id
  */
-export async function getSMS(config: KudosityConfig, smsId: string): Promise<SMSResponse> {
+export async function getSMS(
+  config: KudosityConfig,
+  smsId: string,
+): Promise<SMSResponse> {
   const response = await fetch(`${BASE_URL}/v2/sms/${encodeURIComponent(smsId)}`, {
     method: "GET",
     headers: buildHeaders(config.apiKey),

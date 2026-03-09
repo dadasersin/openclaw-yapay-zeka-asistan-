@@ -137,7 +137,6 @@ export const CHAT_CHANNEL_ALIASES: Record<string, ChatChannelId> = {
   "google-chat": "googlechat",
   gchat: "googlechat",
   kudosity: "kudosity-sms",
-  sms: "kudosity-sms",
 };
 
 const normalizeChannelKey = (raw?: string | null): string | undefined => {

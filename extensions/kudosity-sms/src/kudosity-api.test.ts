@@ -101,14 +101,11 @@ describe("sendSMS", () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 401,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            error: "Unauthorized",
-            message: "Invalid API key",
-            status_code: 401,
-          }),
-        ),
+      text: () => Promise.resolve(JSON.stringify({
+        error: "Unauthorized",
+        message: "Invalid API key",
+        status_code: 401,
+      })),
     });
 
     await expect(
@@ -149,7 +146,9 @@ describe("getSMS", () => {
     expect(result.id).toBe("2d2c8fb6-e514-4f5f-9706-0672b0259218");
 
     const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe("https://api.transmitmessage.com/v2/sms/2d2c8fb6-e514-4f5f-9706-0672b0259218");
+    expect(url).toBe(
+      "https://api.transmitmessage.com/v2/sms/2d2c8fb6-e514-4f5f-9706-0672b0259218",
+    );
     expect(options.method).toBe("GET");
     expect(options.headers["x-api-key"]).toBe("test-api-key-123");
   });
