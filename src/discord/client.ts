@@ -1,4 +1,5 @@
 import { RequestClient } from "@buape/carbon";
+import { ProxyAgent } from "undici";
 import { loadConfig } from "../config/config.js";
 import { createDiscordRetryRunner, type RetryRunner } from "../infra/retry-policy.js";
 import type { RetryConfig } from "../infra/retry.js";
@@ -27,8 +28,12 @@ function resolveToken(params: { explicit?: string; accountId: string; fallbackTo
   return fallback;
 }
 
-function resolveRest(token: string, rest?: RequestClient) {
-  return rest ?? new RequestClient(token);
+function resolveRest(token: string, proxy?: string, rest?: RequestClient) {
+  if (rest) {
+    return rest;
+  }
+  const dispatcher = proxy?.trim() ? new ProxyAgent(proxy.trim()) : undefined;
+  return new RequestClient(token, { dispatcher });
 }
 
 export function createDiscordRestClient(opts: DiscordClientOpts, cfg = loadConfig()) {
@@ -38,7 +43,7 @@ export function createDiscordRestClient(opts: DiscordClientOpts, cfg = loadConfi
     accountId: account.accountId,
     fallbackToken: account.token,
   });
-  const rest = resolveRest(token, opts.rest);
+  const rest = resolveRest(token, account.config.proxy, opts.rest);
   return { token, rest, account };
 }
 
