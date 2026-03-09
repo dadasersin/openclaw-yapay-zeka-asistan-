@@ -174,6 +174,28 @@ export function stripInboundMetadata(text: string): string {
     result.push(line);
   }
 
+  // Skip any leading blank lines before checking for separator.
+  // The metadata blocks end with a blank line, so after stripping metadata
+  // we may have leading blanks before the "---" separator.
+  let separatorIndex = 0;
+  while (separatorIndex < result.length && result[separatorIndex]?.trim() === "") {
+    separatorIndex++;
+  }
+
+  // Strip the user message separator if present.
+  // Only strip when we see the full pattern: "---" followed by "**User Message:**"
+  if (
+    separatorIndex < result.length &&
+    result[separatorIndex]?.trim() === "---" &&
+    result[separatorIndex + 1]?.trim() === "**User Message:**"
+  ) {
+    // Remove the separator lines and any leading blank lines
+    result.splice(0, separatorIndex + 2);
+    while (result.length > 0 && result[0]?.trim() === "") {
+      result.shift();
+    }
+  }
+
   return result.join("\n").replace(/^\n+/, "").replace(/\n+$/, "");
 }
 
@@ -217,6 +239,20 @@ export function stripLeadingInboundMetadata(text: string): string {
     }
 
     while (index < lines.length && lines[index].trim() === "") {
+      index++;
+    }
+  }
+
+  // Strip the user message separator if present.
+  // Only strip when we see the full pattern: "---" followed by "**User Message:**"
+  // This avoids corrupting old-format messages that happen to start with "---"
+  if (
+    index < lines.length &&
+    lines[index]?.trim() === "---" &&
+    lines[index + 1]?.trim() === "**User Message:**"
+  ) {
+    index += 2;
+    while (index < lines.length && lines[index]?.trim() === "") {
       index++;
     }
   }
