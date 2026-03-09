@@ -29,7 +29,7 @@ import {
   resolveControlUiRootSync,
 } from "../infra/control-ui-assets.js";
 import { isDiagnosticsEnabled } from "../infra/diagnostic-events.js";
-import { logAcceptedEnvOption } from "../infra/env.js";
+import { isTruthyEnvValue, logAcceptedEnvOption } from "../infra/env.js";
 import { createExecApprovalForwarder } from "../infra/exec-approval-forwarder.js";
 import { onHeartbeatEvent } from "../infra/heartbeat-events.js";
 import { startHeartbeatRunner, type HeartbeatRunner } from "../infra/heartbeat-runner.js";
@@ -115,6 +115,7 @@ import {
   mergeGatewayTailscaleConfig,
 } from "./startup-auth.js";
 import { maybeSeedControlUiAllowedOriginsAtStartup } from "./startup-control-ui-origins.js";
+import { ensureGatewayModelAuthConfigured } from "./startup-model-auth.js";
 
 export { __resetModelCatalogCacheForTest } from "./server-model-catalog.js";
 
@@ -461,6 +462,13 @@ export async function startGatewayServer(
     writeConfig: writeConfigFile,
     log,
   });
+
+  const skipChannelsAtStartup =
+    isTruthyEnvValue(process.env.OPENCLAW_SKIP_CHANNELS) ||
+    isTruthyEnvValue(process.env.OPENCLAW_SKIP_PROVIDERS);
+  if (!minimalTestGateway && !skipChannelsAtStartup) {
+    await ensureGatewayModelAuthConfigured({ cfg: cfgAtStart });
+  }
 
   initSubagentRegistry();
   const defaultAgentId = resolveDefaultAgentId(cfgAtStart);
@@ -1063,3 +1071,4 @@ export async function startGatewayServer(
     },
   };
 }
+
