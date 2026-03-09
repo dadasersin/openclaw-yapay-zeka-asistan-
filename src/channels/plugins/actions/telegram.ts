@@ -54,15 +54,27 @@ function readTelegramChatIdParam(params: Record<string, unknown>): string | numb
   );
 }
 
-function readTelegramMessageIdParam(params: Record<string, unknown>): number {
+function readTelegramMessageIdParam(
+  params: Record<string, unknown>,
+  options?: { required?: boolean },
+): number | undefined {
+  const required = options?.required ?? true;
   const messageId = readNumberParam(params, "messageId", {
-    required: true,
+    required,
     integer: true,
+    strict: true,
   });
-  if (typeof messageId !== "number") {
+  if (required && typeof messageId !== "number") {
     throw new Error("messageId is required.");
   }
-  return messageId;
+  return typeof messageId === "number" ? messageId : undefined;
+}
+
+function readTelegramTopicIdParam(params: Record<string, unknown>): number | undefined {
+  return (
+    readNumberParam(params, "topicId", { integer: true, strict: true }) ??
+    readNumberParam(params, "threadId", { integer: true, strict: true })
+  );
 }
 
 export const telegramMessageActions: ChannelMessageActionAdapter = {
@@ -96,6 +108,7 @@ export const telegramMessageActions: ChannelMessageActionAdapter = {
     }
     if (isEnabled("deleteMessage")) {
       actions.add("delete");
+      actions.add("topic-delete");
     }
     if (isEnabled("editMessage")) {
       actions.add("edit");
@@ -194,12 +207,53 @@ export const telegramMessageActions: ChannelMessageActionAdapter = {
 
     if (action === "delete") {
       const chatId = readTelegramChatIdParam(params);
-      const messageId = readTelegramMessageIdParam(params);
+      const hasMessageIdParam = Object.hasOwn(params, "messageId");
+      const messageId = readTelegramMessageIdParam(params, { required: false });
+      if (hasMessageIdParam && typeof messageId !== "number") {
+        throw new Error("messageId must be a valid number for action=delete.");
+      }
+      if (typeof messageId === "number") {
+        return await handleTelegramAction(
+          {
+            action: "deleteMessage",
+            chatId,
+            messageId,
+            accountId: accountId ?? undefined,
+          },
+          cfg,
+          { mediaLocalRoots },
+        );
+      }
+
+      // Backward compatibility: older tool calls may still use action=delete with thread/topic ids.
+      const legacyTopicId = readTelegramTopicIdParam(params);
+      if (typeof legacyTopicId === "number") {
+        return await handleTelegramAction(
+          {
+            action: "deleteForumTopic",
+            chatId,
+            topicId: legacyTopicId,
+            accountId: accountId ?? undefined,
+          },
+          cfg,
+          { mediaLocalRoots },
+        );
+      }
+
+      throw new Error("messageId is required for action=delete.");
+    }
+
+    if (action === "topic-delete") {
+      const chatId = readTelegramChatIdParam(params);
+      const topicId = readTelegramTopicIdParam(params);
+      if (typeof topicId !== "number") {
+        throw new Error("threadId/topicId is required for action=topic-delete.");
+      }
       return await handleTelegramAction(
         {
-          action: "deleteMessage",
+          action: "deleteForumTopic",
           chatId,
-          messageId,
+          topicId,
           accountId: accountId ?? undefined,
         },
         cfg,
