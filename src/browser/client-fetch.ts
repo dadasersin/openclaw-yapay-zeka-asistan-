@@ -176,6 +176,17 @@ async function fetchHttpJson<T>(
     const res = await fetch(url, { ...init, signal: ctrl.signal });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+      // Detect Browserbase 429 rate limit errors and provide actionable guidance
+      if (res.status === 429) {
+        const isBrowserbase = url.includes("browserbase") || text.toLowerCase().includes("browserbase");
+        if (isBrowserbase) {
+          throw new BrowserServiceError(
+            "Browserbase rate limit reached (max concurrent sessions exceeded). " +
+            "Wait for current session to complete, or upgrade your Browserbase plan. " +
+            "Do NOT retry the browser tool — it will keep failing until a session slot is available."
+          );
+        }
+      }
       throw new BrowserServiceError(text || `HTTP ${res.status}`);
     }
     return (await res.json()) as T;
