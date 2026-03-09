@@ -215,16 +215,20 @@ export class GatewayBrowserClient {
         deviceId: deviceIdentity.deviceId,
         role,
       })?.token;
-      deviceToken = !(explicitGatewayToken || this.opts.password?.trim())
-        ? (storedToken ?? undefined)
-        : undefined;
+      // Always resolve the device token independently of shared credentials.
+      // The gateway server supports deviceToken fallback when the shared
+      // token/password is absent or invalid.  Suppressing the stored token
+      // caused reconnects to fail with "device identity required" after SPA
+      // navigation dropped the shared token from the URL hash (#39611).
+      deviceToken = storedToken ?? undefined;
       canFallbackToShared = Boolean(deviceToken && explicitGatewayToken);
     }
     authToken = explicitGatewayToken ?? deviceToken;
     const auth =
-      authToken || this.opts.password
+      authToken || this.opts.password || deviceToken
         ? {
             token: authToken,
+            deviceToken,
             password: this.opts.password,
           }
         : undefined;
@@ -303,7 +307,13 @@ export class GatewayBrowserClient {
         } else {
           this.pendingConnectError = undefined;
         }
-        if (canFallbackToShared && deviceIdentity) {
+        // Only purge cached device token on gateway-level auth rejections.
+        // Transient errors (network timeouts, socket resets) should not
+        // erase a valid device token — otherwise a temporary failure while
+        // the shared URL token is still present would wipe the fallback
+        // credential, causing "device identity required" on the next
+        // reconnect after the URL hash is stripped (#39611).
+        if (canFallbackToShared && deviceIdentity && err instanceof GatewayRequestError) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
         }
         this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
