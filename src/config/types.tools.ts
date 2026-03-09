@@ -441,8 +441,8 @@ export type ToolsConfig = {
     search?: {
       /** Enable web search tool (default: true when API key is present). */
       enabled?: boolean;
-      /** Search provider ("brave", "gemini", "grok", "kimi", or "perplexity"). */
-      provider?: "brave" | "gemini" | "grok" | "kimi" | "perplexity";
+      /** Search provider ("brave", "exa", "gemini", "grok", "kimi", or "perplexity"). */
+      provider?: "brave" | "exa" | "gemini" | "grok" | "kimi" | "perplexity";
       /** Brave Search API key (optional; defaults to BRAVE_API_KEY env var). */
       apiKey?: SecretInput;
       /** Default search results count (1-10). */
@@ -489,6 +489,17 @@ export type ToolsConfig = {
         baseUrl?: string;
         /** @deprecated Legacy Sonar/OpenRouter field. Ignored by Search API. */
         model?: string;
+      };
+      /** Exa-specific configuration (used when provider="exa"). */
+      exa?: {
+        /** Exa API key (defaults to EXA_API_KEY env var). */
+        apiKey?: SecretInput;
+        /** Default number of results from Exa (1-100). */
+        numResults?: number;
+        /** Exa search type: "auto" (default), "neural", or "keyword". */
+        type?: "auto" | "neural" | "keyword";
+        /** Include text content snippets in results (default: false). */
+        contents?: boolean;
       };
     };
     fetch?: {
