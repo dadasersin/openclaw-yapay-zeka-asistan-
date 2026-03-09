@@ -38,7 +38,7 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
     });
     const errorText = (friendlyError || lastAssistant.errorMessage || "LLM request failed.").trim();
     ctx.log.warn(
-      `embedded run agent end: runId=${ctx.params.runId} isError=true error=${errorText}`,
+      `embedded run agent end: runId=${ctx.params.runId} isError=true model=${lastAssistant.model ?? "unknown"} provider=${lastAssistant.provider ?? "unknown"} error=${errorText}`,
     );
     emitAgentEvent({
       runId: ctx.params.runId,
