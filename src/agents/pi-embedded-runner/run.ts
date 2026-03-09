@@ -63,7 +63,7 @@ import { resolveModel } from "./model.js";
 import { runEmbeddedAttempt } from "./run/attempt.js";
 import type { RunEmbeddedPiAgentParams } from "./run/params.js";
 import { buildEmbeddedRunPayloads } from "./run/payloads.js";
-import { resolveToolOnlyTurnSafetyConfig } from "./tool-only-turn-safety.js";
+import { buildApiErrorNotice, resolveToolOnlyTurnSafetyConfig } from "./tool-only-turn-safety.js";
 import {
   truncateOversizedToolResultsInSession,
   sessionLikelyHasOversizedToolResults,
@@ -815,9 +815,6 @@ export async function runEmbeddedPiAgent(
         if (apiErrorNotified) {
           return;
         }
-        if (!toolOnlySafetyConfig.notifyUserOnApiError) {
-          return;
-        }
         if (!params.onBlockReply) {
           return;
         }
@@ -826,10 +823,11 @@ export async function runEmbeddedPiAgent(
         if (hasText) {
           return;
         }
+        const notice = buildApiErrorNotice(errorSummary, toolOnlySafetyConfig);
+        if (!notice) {
+          return;
+        }
         apiErrorNotified = true;
-        const notice =
-          `⚠️ The AI service encountered a temporary error (${errorSummary}). ` +
-          `Retrying automatically — please hold on.`;
         void Promise.resolve()
           .then(() => params.onBlockReply?.({ text: notice }))
           .catch((err) => {
