@@ -69,9 +69,19 @@ export function createOpenClawTools(
     senderIsOwner?: boolean;
     /** Ephemeral session UUID — regenerated on /new and /reset. */
     sessionId?: string;
+    /**
+     * Workspace directory to pass to spawned subagents for inheritance.
+     * Defaults to workspaceDir. Use this to pass the actual agent workspace when the
+     * session itself is running inside a read-only sandbox (workspaceDir would be the
+     * sandboxed copy, but subagents should inherit the real workspace path).
+     */
+    spawnWorkspaceDir?: string;
   } & SpawnedToolContext,
 ): AnyAgentTool[] {
   const workspaceDir = resolveWorkspaceRoot(options?.workspaceDir);
+  const spawnWorkspaceDir = resolveWorkspaceRoot(
+    options?.spawnWorkspaceDir ?? options?.workspaceDir,
+  );
   const imageTool = options?.agentDir?.trim()
     ? createImageTool({
         config: options?.config,
@@ -178,7 +188,7 @@ export function createOpenClawTools(
       agentGroupSpace: options?.agentGroupSpace,
       sandboxed: options?.sandboxed,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
-      workspaceDir,
+      workspaceDir: spawnWorkspaceDir,
     }),
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,
