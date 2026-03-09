@@ -34,6 +34,16 @@ export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol"];
 const STARTUP_LOOKBACK_SEC = 120; // tolerate relay lag / clock skew
 const MAX_PERSISTED_EVENT_IDS = 5000;
 const STATE_PERSIST_DEBOUNCE_MS = 5000; // Debounce state writes
+/** @internal Exported for testing. */
+export const MAX_PLAINTEXT_LENGTH = 65536; // 64 KiB cap on decrypted messages
+/**
+ * Maximum ciphertext length: NIP-04 uses AES-CBC (padded to 16-byte blocks)
+ * then base64-encoded (4/3 expansion), plus the IV suffix ("?iv=…").
+ * Derived from MAX_PLAINTEXT_LENGTH so both constants stay in sync.
+ * @internal Exported for testing.
+ */
+export const MAX_CIPHERTEXT_LENGTH =
+  Math.ceil(MAX_PLAINTEXT_LENGTH * (4 / 3)) + 128; // ~87 509 chars
 
 // Circuit breaker configuration
 const CIRCUIT_BREAKER_THRESHOLD = 5; // failures before opening
@@ -446,6 +456,18 @@ export async function startNostrBus(options: NostrBusOptions): Promise<NostrBusH
       seen.add(event.id);
       metrics.emit("memory.seen_tracker_size", seen.size());
 
+      // Guard against oversized ciphertext before spending CPU on decrypt.
+      // Runs AFTER seen.add so rejected events are not re-processed on every
+      // relay delivery.
+      if (event.content.length > MAX_CIPHERTEXT_LENGTH) {
+        metrics.emit("event.rejected.oversized_ciphertext");
+        onError?.(
+          new Error(`Ciphertext too long (${event.content.length} chars)`),
+          `event ${event.id}`,
+        );
+        return;
+      }
+
       // Decrypt the message
       let plaintext: string;
       try {
@@ -455,6 +477,16 @@ export async function startNostrBus(options: NostrBusOptions): Promise<NostrBusH
         metrics.emit("decrypt.failure");
         metrics.emit("event.rejected.decrypt_failed");
         onError?.(err as Error, `decrypt from ${event.pubkey}`);
+        return;
+      }
+
+      // Guard against oversized decrypted payloads
+      if (plaintext.length > MAX_PLAINTEXT_LENGTH) {
+        metrics.emit("event.rejected.oversized_plaintext");
+        onError?.(
+          new Error(`Decrypted message too long (${plaintext.length} chars)`),
+          `event ${event.id}`,
+        );
         return;
       }
 
