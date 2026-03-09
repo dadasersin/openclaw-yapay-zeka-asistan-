@@ -1,0 +1,11 @@
+{
+  "name": "@openclaw/agent-debugger",
+  "version": "1.0.0",
+  "description": "Logs agent interaction events (LLM, tools, prompts) for debugging",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

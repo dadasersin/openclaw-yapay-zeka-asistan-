@@ -1,0 +1,5 @@
+{
+  "id": "agent-debugger",
+  "name": "Agent Debugger",
+  "description": "Logs full agent interaction (prompts, LLM traffic, tool calls) for debugging"
+}
