@@ -6,7 +6,6 @@ metadata:
   {
     "openclaw":
       {
-        "os": ["darwin", "linux"],
         "emoji": "📍",
         "requires": { "bins": ["goplaces"], "env": ["GOOGLE_PLACES_API_KEY"] },
         "primaryEnv": "GOOGLE_PLACES_API_KEY",

@@ -6,7 +6,6 @@ metadata:
   {
     "openclaw":
       {
-        "os": ["darwin", "linux"],
         "emoji": "🗣️",
         "requires": { "bins": ["sag"], "env": ["ELEVENLABS_API_KEY"] },
         "primaryEnv": "ELEVENLABS_API_KEY",
