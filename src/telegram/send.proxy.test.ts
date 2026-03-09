@@ -5,6 +5,7 @@ const { botApi, botCtorSpy } = vi.hoisted(() => ({
     sendMessage: vi.fn(),
     setMessageReaction: vi.fn(),
     deleteMessage: vi.fn(),
+    deleteForumTopic: vi.fn(),
   },
   botCtorSpy: vi.fn(),
 }));
@@ -51,7 +52,12 @@ vi.mock("grammy", () => ({
   InputFile: class {},
 }));
 
-import { deleteMessageTelegram, reactMessageTelegram, sendMessageTelegram } from "./send.js";
+import {
+  deleteForumTopicTelegram,
+  deleteMessageTelegram,
+  reactMessageTelegram,
+  sendMessageTelegram,
+} from "./send.js";
 
 describe("telegram proxy client", () => {
   const proxyUrl = "http://proxy.test:8080";
@@ -79,6 +85,7 @@ describe("telegram proxy client", () => {
     botApi.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: "123" } });
     botApi.setMessageReaction.mockResolvedValue(undefined);
     botApi.deleteMessage.mockResolvedValue(true);
+    botApi.deleteForumTopic.mockResolvedValue(true);
     botCtorSpy.mockClear();
     loadConfig.mockReturnValue({
       channels: { telegram: { accounts: { foo: { proxy: proxyUrl } } } },
@@ -99,6 +106,10 @@ describe("telegram proxy client", () => {
     {
       name: "deleteMessage",
       run: () => deleteMessageTelegram("123", "456", { token: "tok", accountId: "foo" }),
+    },
+    {
+      name: "deleteForumTopic",
+      run: () => deleteForumTopicTelegram("123", "456", { token: "tok", accountId: "foo" }),
     },
   ])("uses proxy fetch for $name", async (testCase) => {
     const { fetchImpl } = prepareProxyFetch();

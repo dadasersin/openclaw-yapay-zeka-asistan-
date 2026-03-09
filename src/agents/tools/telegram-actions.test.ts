@@ -18,6 +18,7 @@ const sendStickerTelegram = vi.fn(async () => ({
   chatId: "123",
 }));
 const deleteMessageTelegram = vi.fn(async () => ({ ok: true }));
+const deleteForumTopicTelegram = vi.fn(async () => ({ ok: true }));
 let envSnapshot: ReturnType<typeof captureEnv>;
 
 vi.mock("../../telegram/send.js", () => ({
@@ -30,6 +31,8 @@ vi.mock("../../telegram/send.js", () => ({
     sendStickerTelegram(...args),
   deleteMessageTelegram: (...args: Parameters<typeof deleteMessageTelegram>) =>
     deleteMessageTelegram(...args),
+  deleteForumTopicTelegram: (...args: Parameters<typeof deleteForumTopicTelegram>) =>
+    deleteForumTopicTelegram(...args),
 }));
 
 describe("handleTelegramAction", () => {
@@ -90,6 +93,7 @@ describe("handleTelegramAction", () => {
     sendPollTelegram.mockClear();
     sendStickerTelegram.mockClear();
     deleteMessageTelegram.mockClear();
+    deleteForumTopicTelegram.mockClear();
     process.env.TELEGRAM_BOT_TOKEN = "tok";
   });
 
@@ -497,6 +501,43 @@ describe("handleTelegramAction", () => {
       456,
       expect.objectContaining({ token: "tok" }),
     );
+  });
+
+  it("deletes a forum topic", async () => {
+    const cfg = {
+      channels: { telegram: { botToken: "tok" } },
+    } as OpenClawConfig;
+    await handleTelegramAction(
+      {
+        action: "deleteForumTopic",
+        chatId: "-100123",
+        topicId: 271,
+      },
+      cfg,
+    );
+    expect(deleteForumTopicTelegram).toHaveBeenCalledWith(
+      "-100123",
+      271,
+      expect.objectContaining({ token: "tok" }),
+    );
+  });
+
+  it("respects createForumTopic gating for deleteForumTopic", async () => {
+    const cfg = {
+      channels: {
+        telegram: { botToken: "tok", actions: { createForumTopic: false } },
+      },
+    } as OpenClawConfig;
+    await expect(
+      handleTelegramAction(
+        {
+          action: "deleteForumTopic",
+          chatId: "-100123",
+          topicId: 271,
+        },
+        cfg,
+      ),
+    ).rejects.toThrow(/Telegram createForumTopic is disabled/);
   });
 
   it("respects deleteMessage gating", async () => {
