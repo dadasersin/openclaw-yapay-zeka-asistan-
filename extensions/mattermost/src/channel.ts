@@ -13,6 +13,8 @@ import {
   deleteAccountFromConfigSection,
   migrateBaseNameToDefaultAccount,
   normalizeAccountId,
+  resolveAllowlistProviderRuntimeGroupPolicy,
+  resolveDefaultGroupPolicy,
   setAccountEnabledInConfigSection,
   type ChannelMessageActionAdapter,
   type ChannelMessageActionName,
@@ -24,6 +26,7 @@ import {
   listMattermostAccountIds,
   resolveDefaultMattermostAccountId,
   resolveMattermostAccount,
+  resolveMattermostReplyToMode,
   type ResolvedMattermostAccount,
 } from "./mattermost/accounts.js";
 import { normalizeMattermostBaseUrl } from "./mattermost/client.js";
@@ -313,6 +316,16 @@ export const mattermostPlugin: ChannelPlugin<ResolvedMattermostAccount> = {
   },
   groups: {
     resolveRequireMention: resolveMattermostGroupRequireMention,
+  },
+  threading: {
+    resolveReplyToMode: ({ cfg, accountId, chatType }) => {
+      const account = resolveMattermostAccount({ cfg, accountId });
+      const kind =
+        chatType === "direct" || chatType === "group" || chatType === "channel"
+          ? chatType
+          : "channel";
+      return resolveMattermostReplyToMode(account, kind);
+    },
   },
   actions: mattermostMessageActions,
   directory: {
