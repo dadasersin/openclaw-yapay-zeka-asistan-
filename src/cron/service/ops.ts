@@ -531,8 +531,12 @@ export async function enqueueRun(state: CronServiceState, id: string, mode?: "du
   }
 
   const runId = `manual:${id}:${state.deps.nowMs()}:${nextManualRunId++}`;
+  // Manual cron triggers run in the background, but isolated executions also
+  // re-enter the global "cron" lane inside runEmbeddedPiAgent(). Using that
+  // same lane here deadlocks manual isolated runs behind themselves.
+  const manualDispatchLane = CommandLane.CronDispatch;
   void enqueueCommandInLane(
-    CommandLane.Cron,
+    manualDispatchLane,
     async () => {
       const result = await run(state, id, mode);
       if (result.ok && "ran" in result && !result.ran) {

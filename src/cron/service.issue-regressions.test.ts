@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import type { HeartbeatRunResult } from "../infra/heartbeat-wake.js";
-import { clearCommandLane, setCommandLaneConcurrency } from "../process/command-queue.js";
+import {
+  clearCommandLane,
+  enqueueCommandInLane,
+  setCommandLaneConcurrency,
+} from "../process/command-queue.js";
 import { CommandLane } from "../process/lanes.js";
 import * as schedule from "./schedule.js";
 import {
@@ -1495,7 +1499,9 @@ describe("Cron issue regressions", () => {
   it("queues manual cron.run requests behind the cron execution lane", async () => {
     vi.useRealTimers();
     clearCommandLane(CommandLane.Cron);
+    clearCommandLane(CommandLane.CronDispatch);
     setCommandLaneConcurrency(CommandLane.Cron, 1);
+    setCommandLaneConcurrency(CommandLane.CronDispatch, 1);
 
     const store = makeStorePath();
     const dueAt = Date.parse("2026-02-06T10:05:02.000Z");
@@ -1566,12 +1572,15 @@ describe("Cron issue regressions", () => {
     });
 
     clearCommandLane(CommandLane.Cron);
+    clearCommandLane(CommandLane.CronDispatch);
   });
 
   it("logs unexpected queued manual run background failures once", async () => {
     vi.useRealTimers();
     clearCommandLane(CommandLane.Cron);
+    clearCommandLane(CommandLane.CronDispatch);
     setCommandLaneConcurrency(CommandLane.Cron, 1);
+    setCommandLaneConcurrency(CommandLane.CronDispatch, 1);
 
     const dueAt = Date.parse("2026-02-06T10:05:03.000Z");
     const job = createDueIsolatedJob({ id: "queued-failure", nowMs: dueAt, nextRunAtMs: dueAt });
@@ -1594,6 +1603,55 @@ describe("Cron issue regressions", () => {
     );
 
     clearCommandLane(CommandLane.Cron);
+    clearCommandLane(CommandLane.CronDispatch);
+  });
+
+  it("does not deadlock manual isolated runs when the isolated executor re-enters the cron lane", async () => {
+    vi.useRealTimers();
+    clearCommandLane(CommandLane.Cron);
+    clearCommandLane(CommandLane.CronDispatch);
+    setCommandLaneConcurrency(CommandLane.Cron, 1);
+    setCommandLaneConcurrency(CommandLane.CronDispatch, 1);
+
+    const store = makeStorePath();
+    const dueAt = Date.parse("2026-02-06T10:05:04.000Z");
+    const job = createDueIsolatedJob({
+      id: "manual-lane-deadlock",
+      nowMs: dueAt,
+      nextRunAtMs: dueAt,
+    });
+    await fs.writeFile(store.storePath, JSON.stringify({ version: 1, jobs: [job] }), "utf-8");
+
+    const nestedCronLaneStarted = createDeferred<void>();
+    const state = createCronServiceState({
+      cronEnabled: true,
+      storePath: store.storePath,
+      log: createNoopLogger(),
+      nowMs: () => dueAt,
+      enqueueSystemEvent: vi.fn(),
+      requestHeartbeatNow: vi.fn(),
+      runIsolatedAgentJob: vi.fn(
+        async () =>
+          await enqueueCommandInLane(CommandLane.Cron, async () => {
+            nestedCronLaneStarted.resolve();
+            return { status: "ok" as const, summary: "done" };
+          }),
+      ),
+    });
+
+    const result = await enqueueRun(state, job.id, "force");
+    expect(result).toEqual({ ok: true, enqueued: true, runId: expect.any(String) });
+
+    await nestedCronLaneStarted.promise;
+    await vi.waitFor(() => {
+      const storedJob = state.store?.jobs.find((entry) => entry.id === job.id);
+      expect(storedJob?.state.lastStatus).toBe("ok");
+      expect(typeof storedJob?.state.lastRunAtMs).toBe("number");
+      expect(storedJob?.state.runningAtMs).toBeUndefined();
+    });
+
+    clearCommandLane(CommandLane.Cron);
+    clearCommandLane(CommandLane.CronDispatch);
   });
 
   // Regression: isolated cron runs must not abort at 1/3 of configured timeoutSeconds.
