@@ -12,6 +12,7 @@ import {
   resolveControlUiLinks,
   waitForGatewayReachable,
 } from "../onboard-helpers.js";
+import { setupRescueWatchdog } from "../onboard-rescue.js";
 import type { OnboardOptions } from "../onboard-types.js";
 import { inferAuthChoiceFromFlags } from "./local/auth-choice-inference.js";
 import { applyNonInteractiveGatewayConfig } from "./local/gateway-config.js";
@@ -75,6 +76,11 @@ export async function runNonInteractiveOnboardingLocal(params: {
   }
   nextConfig = gatewayResult.nextConfig;
 
+  const installDaemon = opts.installDaemon || opts.rescueWatchdog === true;
+  if (opts.rescueWatchdog === true && opts.installDaemon !== true) {
+    runtime.log("Rescue watchdog requested; enabling managed Gateway service install.");
+  }
+
   nextConfig = applyNonInteractiveSkillsConfig({ nextConfig, opts, runtime });
 
   nextConfig = applyWizardMetadata(nextConfig, { command: "onboard", mode });
@@ -85,17 +91,37 @@ export async function runNonInteractiveOnboardingLocal(params: {
     skipBootstrap: Boolean(nextConfig.agents?.defaults?.skipBootstrap),
   });
 
-  if (opts.installDaemon) {
+  if (installDaemon) {
     const { installGatewayDaemonNonInteractive } = await import("./local/daemon-install.js");
     await installGatewayDaemonNonInteractive({
       nextConfig,
-      opts,
+      opts: { ...opts, installDaemon },
       runtime,
       port: gatewayResult.port,
     });
   }
 
   const daemonRuntimeRaw = opts.daemonRuntime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME;
+  const rescueWatchdog =
+    opts.rescueWatchdog === true
+      ? await setupRescueWatchdog({
+          sourceConfig: nextConfig,
+          workspaceDir,
+          mainPort: gatewayResult.port,
+          monitoredProfile: process.env.OPENCLAW_PROFILE,
+          runtime: daemonRuntimeRaw,
+          output: {
+            log: runtime.log,
+          },
+        }).catch((error) => {
+          runtime.error(
+            error instanceof Error
+              ? `Rescue watchdog setup failed: ${error.message}`
+              : String(error),
+          );
+          return undefined;
+        })
+      : undefined;
   if (!opts.skipHealth) {
     const { healthCommand } = await import("../health.js");
     const links = resolveControlUiLinks({
@@ -124,8 +150,9 @@ export async function runNonInteractiveOnboardingLocal(params: {
       authMode: gatewayResult.authMode,
       tailscaleMode: gatewayResult.tailscaleMode,
     },
-    installDaemon: Boolean(opts.installDaemon),
-    daemonRuntime: opts.installDaemon ? daemonRuntimeRaw : undefined,
+    installDaemon: Boolean(installDaemon),
+    daemonRuntime: installDaemon ? daemonRuntimeRaw : undefined,
+    rescueWatchdog,
     skipSkills: Boolean(opts.skipSkills),
     skipHealth: Boolean(opts.skipHealth),
   });

@@ -21,6 +21,11 @@ import {
   waitForGatewayReachable,
   resolveControlUiLinks,
 } from "../commands/onboard-helpers.js";
+import {
+  canEnableRescueWatchdog,
+  resolveMonitoredProfileName,
+  setupRescueWatchdog,
+} from "../commands/onboard-rescue.js";
 import type { OnboardOptions } from "../commands/onboard-types.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveGatewayService } from "../daemon/service.js";
@@ -89,6 +94,24 @@ export async function finalizeOnboardingWizard(
 
   const explicitInstallDaemon =
     typeof opts.installDaemon === "boolean" ? opts.installDaemon : undefined;
+  const explicitRescueWatchdog =
+    typeof opts.rescueWatchdog === "boolean" ? opts.rescueWatchdog : undefined;
+  const monitoredProfile = resolveMonitoredProfileName();
+  let rescueWatchdogEnabled = false;
+  if (explicitRescueWatchdog === true && !canEnableRescueWatchdog(monitoredProfile)) {
+    await prompter.note(
+      `Rescue watchdog is not supported while onboarding the "${monitoredProfile}" profile.`,
+      "Rescue watchdog",
+    );
+  } else if (canEnableRescueWatchdog(monitoredProfile)) {
+    rescueWatchdogEnabled =
+      explicitRescueWatchdog ??
+      (await prompter.confirm({
+        message:
+          "Enable rescue watchdog (second isolated gateway that auto-restarts this profile if it goes unhealthy)",
+        initialValue: false,
+      }));
+  }
   let installDaemon: boolean;
   if (explicitInstallDaemon !== undefined) {
     installDaemon = explicitInstallDaemon;
@@ -111,8 +134,25 @@ export async function finalizeOnboardingWizard(
     installDaemon = false;
   }
 
+  if (rescueWatchdogEnabled && !installDaemon) {
+    if (process.platform === "linux" && !systemdAvailable) {
+      await prompter.note(
+        "Rescue watchdog requires a managed Gateway service. systemd user services are unavailable here, so rescue watchdog was skipped.",
+        "Rescue watchdog",
+      );
+      rescueWatchdogEnabled = false;
+    } else {
+      await prompter.note(
+        "Rescue watchdog requires the primary gateway to run as a managed service. Enabling Gateway service install.",
+        "Rescue watchdog",
+      );
+      installDaemon = true;
+    }
+  }
+
+  let daemonRuntime = opts.daemonRuntime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME;
   if (installDaemon) {
-    const daemonRuntime =
+    daemonRuntime =
       flow === "quickstart"
         ? DEFAULT_GATEWAY_DAEMON_RUNTIME
         : await prompter.select({
@@ -237,6 +277,27 @@ export async function finalizeOnboardingWizard(
           "https://docs.openclaw.ai/gateway/troubleshooting",
         ].join("\n"),
         "Health check help",
+      );
+    }
+  }
+
+  if (rescueWatchdogEnabled) {
+    try {
+      await setupRescueWatchdog({
+        sourceConfig: nextConfig,
+        workspaceDir: options.workspaceDir,
+        mainPort: settings.port,
+        monitoredProfile,
+        runtime: daemonRuntime,
+        output: {
+          log: runtime.log,
+          note: prompter.note,
+        },
+      });
+    } catch (error) {
+      await prompter.note(
+        error instanceof Error ? error.message : String(error),
+        "Rescue watchdog",
       );
     }
   }

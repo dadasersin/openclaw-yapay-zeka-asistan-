@@ -81,7 +81,10 @@ The wizard starts with **QuickStart** (defaults) vs **Advanced** (full control).
    If token auth requires a token and the configured token SecretRef is unresolved, daemon install is blocked with actionable guidance.
    If both `gateway.auth.token` and `gateway.auth.password` are configured and `gateway.auth.mode` is unset, daemon install is blocked until mode is set explicitly.
 6. **Health check** — Starts the Gateway and verifies it's running.
-7. **Skills** — Installs recommended skills and optional dependencies.
+7. **Rescue watchdog** — Optional one-click setup for a second isolated local profile that watches the primary profile and restarts it automatically if health probes fail.
+   Rescue uses its own workspace, Gateway port, and managed service, then installs a rescue cron job that checks the primary profile every 5 minutes.
+   It is only available for local onboarding on primary profiles and is skipped when Linux systemd user services are unavailable.
+8. **Skills** — Installs recommended skills and optional dependencies.
 
 <Note>
 Re-running the wizard does **not** wipe anything unless you explicitly choose **Reset** (or pass `--reset`).
