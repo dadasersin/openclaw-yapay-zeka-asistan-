@@ -9,6 +9,57 @@ import * as https from "node:https";
 const MIN_SEND_INTERVAL_MS = 500;
 let lastSendTime = 0;
 
+/**
+ * Split text into chunks that fit within Synology Chat's message size limit.
+ * Prefers splitting at newlines, then spaces, then hard-cuts as a last resort.
+ *
+ * Follows the ChannelOutboundAdapter.chunker contract:
+ *   (text: string, limit: number) => string[]
+ * Referenced by the outbound descriptor in channel.ts so the framework
+ * handles the send loop, retry, and abort automatically.
+ */
+export function chunkTextForSynology(text: string, limit: number): string[] {
+  if (!text) return [];
+  if (text.length <= limit) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+  const minChunkSize = Math.floor(limit * 0.3);
+
+  while (remaining.length > 0) {
+    if (remaining.length <= limit) {
+      chunks.push(remaining);
+      break;
+    }
+
+    let splitAt = -1;
+
+    // Prefer splitting at a newline
+    const newlineIdx = remaining.lastIndexOf("\n", limit);
+    if (newlineIdx >= minChunkSize) {
+      splitAt = newlineIdx + 1; // include the newline in the current chunk
+    }
+
+    // Fall back to splitting at a space
+    if (splitAt === -1) {
+      const spaceIdx = remaining.lastIndexOf(" ", limit);
+      if (spaceIdx >= minChunkSize) {
+        splitAt = spaceIdx + 1;
+      }
+    }
+
+    // Hard cut as last resort
+    if (splitAt === -1) {
+      splitAt = limit;
+    }
+
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt);
+  }
+
+  return chunks;
+}
+
 // --- Chat user_id resolution ---
 // Synology Chat uses two different user_id spaces:
 //   - Outgoing webhook user_id: per-integration sequential ID (e.g. 1)
@@ -32,12 +83,12 @@ const chatUserCache = new Map<string, ChatUserCacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Send a text message to Synology Chat via the incoming webhook.
+ * Send a single text message to Synology Chat via the incoming webhook.
  *
- * @param incomingUrl - Synology Chat incoming webhook URL
- * @param text - Message text to send
- * @param userId - Optional user ID to mention with @
- * @returns true if sent successfully
+ * Note: chunking of long messages is handled by the framework via the
+ * `chunker` field in the outbound descriptor (channel.ts). This function
+ * receives already-chunked text when called through the outbound adapter.
+ * The dispatcher webhook path still calls this directly for inline replies.
  */
 export async function sendMessage(
   incomingUrl: string,
@@ -45,11 +96,8 @@ export async function sendMessage(
   userId?: string | number,
   allowInsecureSsl = true,
 ): Promise<boolean> {
-  // Synology Chat API requires user_ids (numeric) to specify the recipient
-  // The @mention is optional but user_ids is mandatory
   const payloadObj: Record<string, any> = { text };
   if (userId) {
-    // userId can be numeric ID or username - if numeric, add to user_ids
     const numericId = typeof userId === "number" ? userId : parseInt(userId, 10);
     if (!isNaN(numericId)) {
       payloadObj.user_ids = [numericId];

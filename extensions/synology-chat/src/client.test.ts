@@ -15,7 +15,8 @@ vi.mock("node:http", () => {
 });
 
 // Import after mocks are set up
-const { sendMessage, sendFileUrl, fetchChatUsers, resolveChatUserId } = await import("./client.js");
+const { sendMessage, sendFileUrl, fetchChatUsers, resolveChatUserId, chunkTextForSynology } =
+  await import("./client.js");
 const https = await import("node:https");
 let fakeNowMs = 1_700_000_000_000;
 
@@ -82,6 +83,62 @@ describe("sendMessage", () => {
     expect(httpsRequest).toHaveBeenCalled();
     const callArgs = httpsRequest.mock.calls[0];
     expect(callArgs[0]).toBe("https://nas.example.com/incoming");
+  });
+});
+
+describe("chunkTextForSynology", () => {
+  const LIMIT = 2000; // matches outbound descriptor textChunkLimit
+
+  it("returns empty array for empty text", () => {
+    expect(chunkTextForSynology("", LIMIT)).toEqual([]);
+  });
+
+  it("returns single chunk for short text", () => {
+    const result = chunkTextForSynology("Hello world", LIMIT);
+    expect(result).toEqual(["Hello world"]);
+  });
+
+  it("returns single chunk for text at exactly the limit", () => {
+    const text = "x".repeat(LIMIT);
+    const result = chunkTextForSynology(text, LIMIT);
+    expect(result).toEqual([text]);
+  });
+
+  it("splits long text into multiple chunks", () => {
+    const text = "word ".repeat(500); // ~2500 chars
+    const chunks = chunkTextForSynology(text, LIMIT);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("")).toBe(text);
+  });
+
+  it("prefers splitting at newlines", () => {
+    const line = "a".repeat(1000);
+    const text = `${line}\n${line}\n${line}`;
+    const chunks = chunkTextForSynology(text, LIMIT);
+    expect(chunks[0]).toBe(`${line}\n`);
+  });
+
+  it("falls back to splitting at spaces", () => {
+    const words = "abcdefghij ".repeat(200); // ~2200 chars, no newlines
+    const chunks = chunkTextForSynology(words, LIMIT);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("")).toBe(words);
+    expect(chunks[0].endsWith(" ")).toBe(true);
+  });
+
+  it("hard-cuts when no whitespace is available", () => {
+    const text = "x".repeat(4000);
+    const chunks = chunkTextForSynology(text, LIMIT);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("")).toBe(text);
+    expect(chunks[0].length).toBe(LIMIT);
+  });
+
+  it("respects the limit parameter", () => {
+    const text = "a".repeat(100);
+    const chunks = chunkTextForSynology(text, 30);
+    expect(chunks.length).toBe(4); // 30 + 30 + 30 + 10
+    expect(chunks.join("")).toBe(text);
   });
 });
 

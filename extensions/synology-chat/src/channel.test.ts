@@ -13,10 +13,14 @@ vi.mock("openclaw/plugin-sdk/synology-chat", () => ({
   })),
 }));
 
-vi.mock("./client.js", () => ({
-  sendMessage: vi.fn().mockResolvedValue(true),
-  sendFileUrl: vi.fn().mockResolvedValue(true),
-}));
+vi.mock("./client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./client.js")>();
+  return {
+    ...actual,
+    sendMessage: vi.fn().mockResolvedValue(true),
+    sendFileUrl: vi.fn().mockResolvedValue(true),
+  };
+});
 
 vi.mock("./webhook-handler.js", () => ({
   createWebhookHandler: vi.fn(() => vi.fn()),
