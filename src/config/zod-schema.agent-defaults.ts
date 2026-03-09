@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidNonNegativeByteSizeString } from "./byte-size.js";
+import { GuardModelConfigSchema } from "./types.security.js";
 import {
   HeartbeatSchema,
   AgentSandboxSchema,
@@ -160,6 +161,7 @@ export const AgentDefaultsSchema = z
     typingMode: TypingModeSchema.optional(),
     heartbeat: HeartbeatSchema,
     maxConcurrent: z.number().int().positive().optional(),
+    guardModel: GuardModelConfigSchema.optional(),
     subagents: z
       .object({
         maxConcurrent: z.number().int().positive().optional(),
