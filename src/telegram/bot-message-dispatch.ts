@@ -444,6 +444,9 @@ export const dispatchTelegramMessage = async ({
     chunkMode,
     linkPreview: telegramCfg.linkPreview,
     replyQuoteText,
+    sessionKey: ctxPayload.SessionKey,
+    isGroup,
+    groupId: isGroup ? String(chatId) : undefined,
   };
   const applyTextToPayload = (payload: ReplyPayload, text: string): ReplyPayload => {
     if (payload.text === text) {
