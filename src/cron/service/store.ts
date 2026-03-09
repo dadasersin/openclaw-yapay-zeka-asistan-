@@ -16,6 +16,10 @@ function normalizePayloadKind(payload: Record<string, unknown>) {
     payload.kind = "agentTurn";
     return true;
   }
+  if (raw === "rescuewatchdog") {
+    payload.kind = "rescueWatchdog";
+    return true;
+  }
   if (raw === "systemevent") {
     payload.kind = "systemEvent";
     return true;
@@ -433,7 +437,8 @@ export async function ensureLoaded(
         mutated = true;
       }
     } else {
-      const inferredSessionTarget = payloadKind === "agentTurn" ? "isolated" : "main";
+      const inferredSessionTarget =
+        payloadKind === "agentTurn" || payloadKind === "rescueWatchdog" ? "isolated" : "main";
       if (raw.sessionTarget !== inferredSessionTarget) {
         raw.sessionTarget = inferredSessionTarget;
         mutated = true;
