@@ -1,13 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
-import {
-  AVATAR_MAX_BYTES,
-  isAvatarDataUrl,
-  isAvatarHttpUrl,
-  isPathWithinRoot,
-  isSupportedLocalAvatarExtension,
-} from "../shared/avatar-policy.js";
+import { AVATAR_MAX_BYTES } from "../shared/avatar-policy.js";
 import { resolveUserPath } from "../utils.js";
 import { resolveAgentWorkspaceDir } from "./agent-scope.js";
 import { loadAgentIdentityFromWorkspace } from "./identity-file.js";
@@ -18,6 +12,8 @@ export type AgentAvatarResolution =
   | { kind: "local"; filePath: string }
   | { kind: "remote"; url: string }
   | { kind: "data"; url: string };
+
+const ALLOWED_AVATAR_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
 
 function normalizeAvatarValue(value: string | undefined | null): string | null {
   const trimmed = value?.trim();
@@ -34,6 +30,15 @@ function resolveAvatarSource(cfg: OpenClawConfig, agentId: string): string | nul
   return fromIdentity;
 }
 
+function isRemoteAvatar(value: string): boolean {
+  const lower = value.toLowerCase();
+  return lower.startsWith("http://") || lower.startsWith("https://");
+}
+
+function isDataAvatar(value: string): boolean {
+  return value.toLowerCase().startsWith("data:");
+}
+
 function resolveExistingPath(value: string): string {
   try {
     return fs.realpathSync(value);
@@ -42,21 +47,34 @@ function resolveExistingPath(value: string): string {
   }
 }
 
+function isPathWithin(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  if (!relative) {
+    return true;
+  }
+  return !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 function resolveLocalAvatarPath(params: {
   raw: string;
   workspaceDir: string;
 }): { ok: true; filePath: string } | { ok: false; reason: string } {
   const workspaceRoot = resolveExistingPath(params.workspaceDir);
-  const raw = params.raw;
+  // Normalize relative path so resolution is consistent across platforms (e.g. Windows).
+  const pathInput =
+    params.raw.startsWith("~") || path.isAbsolute(params.raw)
+      ? params.raw
+      : path.normalize(params.raw);
   const resolved =
-    raw.startsWith("~") || path.isAbsolute(raw)
-      ? resolveUserPath(raw)
-      : path.resolve(workspaceRoot, raw);
+    pathInput.startsWith("~") || path.isAbsolute(pathInput)
+      ? resolveUserPath(pathInput)
+      : path.resolve(workspaceRoot, pathInput);
   const realPath = resolveExistingPath(resolved);
-  if (!isPathWithinRoot(workspaceRoot, realPath)) {
+  if (!isPathWithin(workspaceRoot, realPath)) {
     return { ok: false, reason: "outside_workspace" };
   }
-  if (!isSupportedLocalAvatarExtension(realPath)) {
+  const ext = path.extname(realPath).toLowerCase();
+  if (!ALLOWED_AVATAR_EXTS.has(ext)) {
     return { ok: false, reason: "unsupported_extension" };
   }
   try {
@@ -78,10 +96,10 @@ export function resolveAgentAvatar(cfg: OpenClawConfig, agentId: string): AgentA
   if (!source) {
     return { kind: "none", reason: "missing" };
   }
-  if (isAvatarHttpUrl(source)) {
+  if (isRemoteAvatar(source)) {
     return { kind: "remote", url: source };
   }
-  if (isAvatarDataUrl(source)) {
+  if (isDataAvatar(source)) {
     return { kind: "data", url: source };
   }
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
