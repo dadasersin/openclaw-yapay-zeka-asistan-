@@ -44,10 +44,7 @@ function resolveNativeConversationId(params: HandleCommandsParams): string | und
 }
 
 function isThreadScopedConversationId(conversationId: string | undefined): boolean {
-  return (
-    typeof conversationId === "string" &&
-    (conversationId.includes(":thread:") || conversationId.includes(":topic:"))
-  );
+  return typeof conversationId === "string" && conversationId.includes(":thread:");
 }
 
 export function resolveAcpCommandConversationId(params: HandleCommandsParams): string | undefined {
