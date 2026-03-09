@@ -1002,9 +1002,8 @@ export async function startGatewayServer(
   // (e.g., WhatsApp listener registration) during startup.
   if (!minimalTestGateway) {
     void (async () => {
-      const { loadPendingDeliveries, recoverPendingDeliveries } = await import(
-        "../infra/outbound/delivery-queue.js"
-      );
+      const { loadPendingDeliveries, recoverPendingDeliveries } =
+        await import("../infra/outbound/delivery-queue.js");
       const { deliverOutboundPayloads } = await import("../infra/outbound/deliver.js");
       const logRecovery = log.child("delivery-recovery");
       const pending = await loadPendingDeliveries();
