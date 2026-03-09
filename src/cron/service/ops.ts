@@ -1,4 +1,4 @@
-import { enqueueCommandInLane, setCommandLaneConcurrency } from "../../process/command-queue.js";
+import { enqueueCommandInLane } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
 import type { CronJob, CronJobCreate, CronJobPatch } from "../types.js";
 import { normalizeCronCreateDeliveryInput } from "./initial-delivery.js";
@@ -535,7 +535,6 @@ export async function enqueueRun(state: CronServiceState, id: string, mode?: "du
   // re-enter the global "cron" lane inside runEmbeddedPiAgent(). Using that
   // same lane here deadlocks manual isolated runs behind themselves.
   const manualDispatchLane = CommandLane.CronDispatch;
-  setCommandLaneConcurrency(manualDispatchLane, state.deps.cronConfig?.maxConcurrentRuns ?? 1);
   void enqueueCommandInLane(
     manualDispatchLane,
     async () => {
