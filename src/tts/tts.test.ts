@@ -489,7 +489,7 @@ describe("tts", () => {
             OPENAI_API_KEY: undefined,
             ELEVENLABS_API_KEY: undefined,
             XI_API_KEY: undefined,
-            MINIMAX_API_KEY: "test-minimax-key",
+            MINIMAX_API_KEY: "test-minimax-key", // pragma: allowlist secret
           },
           prefsPath: "/tmp/tts-prefs-minimax.json",
           expected: "minimax",
@@ -569,7 +569,7 @@ describe("tts", () => {
         messages: {
           tts: {
             minimax: {
-              apiKey: "minimax-key-from-config",
+              apiKey: "minimax-key-from-config", // pragma: allowlist secret
             },
           },
         },
@@ -580,6 +580,7 @@ describe("tts", () => {
 
     it("resolves MiniMax API key from env var", () => {
       withEnv({ MINIMAX_API_KEY: "minimax-key-from-env" }, () => {
+        // pragma: allowlist secret
         const config = resolveTtsConfig(baseCfg);
         expect(tts.resolveTtsApiKey(config, "minimax")).toBe("minimax-key-from-env");
       });

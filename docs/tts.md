@@ -130,7 +130,7 @@ Full schema is in [Gateway configuration](/gateway/configuration).
       auto: "always",
       provider: "minimax",
       minimax: {
-        apiKey: "minimax_api_key",
+        apiKey: "minimax_api_key", // pragma: allowlist secret
         model: "speech-2.8-hd",
         voiceId: "Chinese (Mandarin)_Lyrical_Voice",
         speed: 1.0,
