@@ -9,6 +9,7 @@ import type {
   BlockReplyChunking,
   SubscribeEmbeddedPiSessionParams,
 } from "./pi-embedded-subscribe.types.js";
+import type { ResolvedTextRepetitionGuardConfig } from "./text-repetition-guard.js";
 import type { NormalizedUsage } from "./usage.js";
 
 export type EmbeddedSubscribeLogger = {
@@ -60,6 +61,11 @@ export type EmbeddedPiSubscribeState = {
   assistantTextBaseline: number;
   suppressBlockChunks: boolean;
   lastReasoningSent?: string;
+
+  /** deltaBuffer length at last text-repetition-guard check (throttle). */
+  textRepetitionLastCheckedLen: number;
+  /** Resolved text-repetition-guard config, cached at message start. */
+  resolvedTextRepetitionGuardConfig?: ResolvedTextRepetitionGuardConfig;
 
   compactionInFlight: boolean;
   pendingCompactionRetry: number;

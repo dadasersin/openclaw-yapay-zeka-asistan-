@@ -17,6 +17,8 @@ import {
   formatReasoningMessage,
   promoteThinkingTagsToBlocks,
 } from "./pi-embedded-utils.js";
+import { resolveTextRepetitionGuardConfig } from "./pi-tools.js";
+import { detectTextRepetition } from "./text-repetition-guard.js";
 
 const stripTrailingDirective = (text: string): string => {
   const openIndex = text.lastIndexOf("[[");
@@ -71,7 +73,12 @@ export function handleMessageStart(
   // may deliver late text_end updates after message_end, which would otherwise
   // re-trigger block replies.
   ctx.resetAssistantMessageState(ctx.state.assistantTexts.length);
-  // Use assistant message_start as the earliest "writing" signal for typing.
+  // Resolve text-repetition-guard config once per message to avoid re-parsing on every tick.
+  ctx.state.resolvedTextRepetitionGuardConfig = resolveTextRepetitionGuardConfig({
+    cfg: ctx.params.config,
+    agentId: ctx.params.agentId,
+  });
+  // Use assistant message_start as the earliest “writing” signal for typing.
   void ctx.params.onAssistantMessageStart?.();
 }
 
@@ -165,6 +172,20 @@ export function handleMessageUpdate(
       ctx.blockChunker.append(chunk);
     } else {
       ctx.state.blockBuffer += chunk;
+    }
+
+    // Text repetition guard: throttle checks to every N chars of new content.
+    const guardConfig = ctx.state.resolvedTextRepetitionGuardConfig;
+    if (guardConfig && guardConfig.enabled) {
+      const checkInterval = guardConfig.checkIntervalChars;
+      if (ctx.state.deltaBuffer.length - ctx.state.textRepetitionLastCheckedLen >= checkInterval) {
+        ctx.state.textRepetitionLastCheckedLen = ctx.state.deltaBuffer.length;
+        const result = detectTextRepetition(ctx.state.deltaBuffer, guardConfig);
+        if (result.looping) {
+          void ctx.params.session.abort();
+          return;
+        }
+      }
     }
   }
 
@@ -423,6 +444,8 @@ export function handleMessageEnd(
   }
 
   ctx.state.deltaBuffer = "";
+  ctx.state.textRepetitionLastCheckedLen = 0;
+  ctx.state.resolvedTextRepetitionGuardConfig = undefined;
   ctx.state.blockBuffer = "";
   ctx.blockChunker?.reset();
   ctx.state.blockState.thinking = false;
