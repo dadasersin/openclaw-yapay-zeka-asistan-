@@ -1,4 +1,4 @@
-import { enqueueCommandInLane } from "../../process/command-queue.js";
+import { enqueueCommandInLane, setCommandLaneConcurrency } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
 import type { CronJob, CronJobCreate, CronJobPatch } from "../types.js";
 import { normalizeCronCreateDeliveryInput } from "./initial-delivery.js";
@@ -531,8 +531,13 @@ export async function enqueueRun(state: CronServiceState, id: string, mode?: "du
   }
 
   const runId = `manual:${id}:${state.deps.nowMs()}:${nextManualRunId++}`;
+  // Manual cron triggers run in the background, but isolated executions also
+  // re-enter the global "cron" lane inside runEmbeddedPiAgent(). Using that
+  // same lane here deadlocks manual isolated runs behind themselves.
+  const manualDispatchLane = CommandLane.CronDispatch;
+  setCommandLaneConcurrency(manualDispatchLane, state.deps.cronConfig?.maxConcurrentRuns ?? 1);
   void enqueueCommandInLane(
-    CommandLane.Cron,
+    manualDispatchLane,
     async () => {
       const result = await run(state, id, mode);
       if (result.ok && "ran" in result && !result.ran) {
