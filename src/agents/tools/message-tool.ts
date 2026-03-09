@@ -13,7 +13,7 @@ import {
   type ChannelMessageActionName,
 } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { loadConfig } from "../../config/config.js";
+import { getRuntimeConfigSnapshot, loadConfig } from "../../config/config.js";
 import { GATEWAY_CLIENT_IDS, GATEWAY_CLIENT_MODES } from "../../gateway/protocol/client-info.js";
 import { getToolResult, runMessageAction } from "../../infra/outbound/message-action-runner.js";
 import { normalizeTargetForProvider } from "../../infra/outbound/target-normalization.js";
@@ -585,6 +585,88 @@ function resolveAgentAccountId(value?: string): string | undefined {
   return normalizeAccountId(trimmed);
 }
 
+function resolveTargetChannelHint(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const separatorIndex = trimmed.indexOf(":");
+  if (separatorIndex <= 0) {
+    return undefined;
+  }
+  return normalizeMessageChannel(trimmed.slice(0, separatorIndex));
+}
+
+const EXPLICIT_CHANNEL_HINT_SENTINELS = new Set(["all", "last"]);
+
+function resolveExplicitChannelHint(value: unknown): string | undefined {
+  const channel = normalizeMessageChannel(typeof value === "string" ? value : undefined);
+  if (!channel || EXPLICIT_CHANNEL_HINT_SENTINELS.has(channel)) {
+    return undefined;
+  }
+  return channel;
+}
+
+function resolveTargetsChannelHint(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  for (const candidate of value) {
+    const channel = resolveTargetChannelHint(candidate);
+    if (channel) {
+      return channel;
+    }
+  }
+  return undefined;
+}
+
+function resolveMessageToolChannelHint(params: {
+  args: Record<string, unknown>;
+  currentChannelProvider?: string;
+}): string | undefined {
+  return (
+    resolveExplicitChannelHint(params.args.channel) ??
+    normalizeMessageChannel(params.currentChannelProvider) ??
+    resolveTargetChannelHint(params.args.target) ??
+    resolveTargetChannelHint(params.args.to) ??
+    resolveTargetsChannelHint(params.args.targets)
+  );
+}
+
+function resolveMessageToolConfig(params: {
+  args: Record<string, unknown>;
+  capturedConfig?: OpenClawConfig;
+  currentChannelProvider?: string;
+}): OpenClawConfig {
+  const runtimeSnapshot = getRuntimeConfigSnapshot();
+  if (!runtimeSnapshot) {
+    return params.capturedConfig ?? loadConfig();
+  }
+
+  // Runtime snapshots are process-global state. Clone once per tool invocation so
+  // long-running sends observe a stable config even if the live snapshot refreshes.
+  const cfg = structuredClone(runtimeSnapshot);
+  if (!params.capturedConfig) {
+    return cfg;
+  }
+
+  const channel = resolveMessageToolChannelHint(params);
+  if (!channel || cfg.channels?.[channel] != null) {
+    return cfg;
+  }
+
+  const capturedChannelConfig = params.capturedConfig.channels?.[channel];
+  if (capturedChannelConfig == null) {
+    return cfg;
+  }
+
+  cfg.channels = {
+    ...cfg.channels,
+    [channel]: structuredClone(capturedChannelConfig),
+  };
+  return cfg;
+}
+
 function filterActionsForContext(params: {
   actions: ChannelMessageActionName[];
   channel?: string;
@@ -704,7 +786,11 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         }
       }
 
-      const cfg = options?.config ?? loadConfig();
+      const cfg = resolveMessageToolConfig({
+        args: params,
+        capturedConfig: options?.config,
+        currentChannelProvider: options?.currentChannelProvider,
+      });
       const action = readStringParam(params, "action", {
         required: true,
       }) as ChannelMessageActionName;
