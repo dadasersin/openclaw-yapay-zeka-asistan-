@@ -696,6 +696,23 @@ export async function runReplyAgent(params: {
       finalPayloads = appendUsageLine(finalPayloads, responseUsageLine);
     }
 
+    // Context usage warning: auto-show usage footer when context exceeds threshold.
+    if (!responseUsageLine && promptTokens && contextTokensUsed && contextTokensUsed > 0) {
+      const contextWarningCfg = cfg?.agents?.defaults?.contextUsageWarning;
+      const contextWarningEnabled = contextWarningCfg?.enabled !== false;
+      const contextWarningThreshold = contextWarningCfg?.threshold ?? 0.7;
+      if (contextWarningEnabled) {
+        const contextPercent = promptTokens / contextTokensUsed;
+        if (contextPercent >= contextWarningThreshold) {
+          const pctLabel = Math.round(contextPercent * 100);
+          finalPayloads = appendUsageLine(
+            finalPayloads,
+            `📊 Context: ${pctLabel}% used — consider /new to start a fresh session`,
+          );
+        }
+      }
+    }
+
     return finalizeWithFollowup(
       finalPayloads.length === 1 ? finalPayloads[0] : finalPayloads,
       queueKey,
