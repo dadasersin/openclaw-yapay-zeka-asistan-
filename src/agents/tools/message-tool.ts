@@ -585,6 +585,64 @@ function resolveAgentAccountId(value?: string): string | undefined {
   return normalizeAccountId(trimmed);
 }
 
+function resolveTargetChannelHint(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const separatorIndex = trimmed.indexOf(":");
+  if (separatorIndex <= 0) {
+    return undefined;
+  }
+  return normalizeMessageChannel(trimmed.slice(0, separatorIndex));
+}
+
+function resolveMessageToolChannelHint(params: {
+  args: Record<string, unknown>;
+  currentChannelProvider?: string;
+}): string | undefined {
+  return (
+    normalizeMessageChannel(readStringParam(params.args, "channel")) ??
+    resolveTargetChannelHint(params.args.target) ??
+    resolveTargetChannelHint(params.args.to) ??
+    normalizeMessageChannel(params.currentChannelProvider)
+  );
+}
+
+function resolveMessageToolConfig(params: {
+  args: Record<string, unknown>;
+  capturedConfig?: OpenClawConfig;
+  currentChannelProvider?: string;
+}): OpenClawConfig {
+  const runtimeSnapshot = getRuntimeConfigSnapshot();
+  if (!runtimeSnapshot) {
+    return params.capturedConfig ?? loadConfig();
+  }
+
+  // Runtime snapshots are process-global state. Clone once per tool invocation so
+  // long-running sends observe a stable config even if the live snapshot refreshes.
+  const cfg = structuredClone(runtimeSnapshot);
+  if (!params.capturedConfig) {
+    return cfg;
+  }
+
+  const channel = resolveMessageToolChannelHint(params);
+  if (!channel || cfg.channels?.[channel] != null) {
+    return cfg;
+  }
+
+  const capturedChannelConfig = params.capturedConfig.channels?.[channel];
+  if (capturedChannelConfig == null) {
+    return cfg;
+  }
+
+  cfg.channels = {
+    ...cfg.channels,
+    [channel]: structuredClone(capturedChannelConfig),
+  };
+  return cfg;
+}
+
 function filterActionsForContext(params: {
   actions: ChannelMessageActionName[];
   channel?: string;
@@ -704,7 +762,11 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         }
       }
 
-      const cfg = getRuntimeConfigSnapshot() ?? options?.config ?? loadConfig();
+      const cfg = resolveMessageToolConfig({
+        args: params,
+        capturedConfig: options?.config,
+        currentChannelProvider: options?.currentChannelProvider,
+      });
       const action = readStringParam(params, "action", {
         required: true,
       }) as ChannelMessageActionName;

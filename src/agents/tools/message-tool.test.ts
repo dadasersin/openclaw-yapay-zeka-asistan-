@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChannelMessageActionName, ChannelPlugin } from "../../channels/plugins/types.js";
 import * as configModule from "../../config/config.js";
+import type { OpenClawConfig } from "../../config/config.js";
 import type { MessageActionRunResult } from "../../infra/outbound/message-action-runner.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
@@ -9,6 +10,14 @@ import { createMessageTool } from "./message-tool.js";
 const mocks = vi.hoisted(() => ({
   runMessageAction: vi.fn(),
 }));
+
+vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+  return {
+    ...actual,
+    getOAuthProviders: actual.getOAuthProviders ?? (() => []),
+  };
+});
 
 vi.mock("../../infra/outbound/message-action-runner.js", async () => {
   const actual = await vi.importActual<
@@ -91,6 +100,7 @@ async function executeSend(params: {
   });
   return mocks.runMessageAction.mock.calls[0]?.[0] as
     | {
+        cfg?: OpenClawConfig;
         params?: Record<string, unknown>;
         sandboxRoot?: string;
         requesterSenderId?: string;
@@ -142,25 +152,182 @@ describe("message tool path passthrough", () => {
     expect(call?.params?.media).toBeUndefined();
   });
 
-  it("prefers the active runtime snapshot over the captured tool config", async () => {
+  it.each([
+    { field: "path", value: "~/Downloads/voice.ogg" },
+    { field: "filePath", value: "./tmp/note.m4a" },
+  ])(
+    "keeps media mutually exclusive from $field when both are provided",
+    async ({ field, value }) => {
+      mockSendResult({ to: "telegram:123" });
+
+      const call = await executeSend({
+        action: {
+          target: "telegram:123",
+          media: "https://example.com/voice.ogg",
+          [field]: value,
+          message: "",
+        },
+      });
+
+      expect(call?.params?.media).toBe("https://example.com/voice.ogg");
+      expect(call?.params?.[field]).toBe(value);
+    },
+  );
+});
+
+describe("message tool runtime config fallback", () => {
+  afterEach(() => {
+    mocks.runMessageAction.mockReset();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    { name: "undefined", snapshot: undefined },
+    { name: "null", snapshot: null },
+  ])(
+    "falls back to the captured tool config when runtime snapshot is $name",
+    async ({ snapshot }) => {
+      mockSendResult({ to: "telegram:123" });
+
+      const capturedCfg: OpenClawConfig = {
+        channels: {
+          telegram: {
+            botToken: "captured-token",
+          },
+        },
+      };
+      const loadCfg: OpenClawConfig = {
+        channels: {
+          telegram: {
+            botToken: "loaded-token",
+          },
+        },
+      };
+      vi.spyOn(configModule, "getRuntimeConfigSnapshot").mockReturnValue(snapshot as never);
+      vi.spyOn(configModule, "loadConfig").mockReturnValue(loadCfg);
+
+      const tool = createMessageTool({ config: capturedCfg });
+      await tool.execute("1", {
+        action: "send",
+        target: "telegram:123",
+        message: "hi",
+      });
+
+      const call = mocks.runMessageAction.mock.calls[0]?.[0] as
+        | { cfg?: OpenClawConfig }
+        | undefined;
+      expect(call?.cfg).toBe(capturedCfg);
+    },
+  );
+
+  it.each([
+    { name: "undefined", snapshot: undefined },
+    { name: "null", snapshot: null },
+  ])("falls back to loadConfig when runtime snapshot is $name", async ({ snapshot }) => {
     mockSendResult({ to: "telegram:123" });
 
-    const runtimeCfg = { channels: { telegram: { botToken: "resolved-token" } } } as never;
-    vi.spyOn(configModule, "getRuntimeConfigSnapshot").mockReturnValue(runtimeCfg);
-    const rawCapturedCfg = {
+    const loadedCfg: OpenClawConfig = {
       channels: {
         telegram: {
-          botToken: {
-            source: "exec",
-            provider: "opexec",
-            id: "telegram-bot-token",
+          botToken: "loaded-token",
+        },
+      },
+    };
+    vi.spyOn(configModule, "getRuntimeConfigSnapshot").mockReturnValue(snapshot as never);
+    vi.spyOn(configModule, "loadConfig").mockReturnValue(loadedCfg);
+
+    const tool = createMessageTool();
+    await tool.execute("1", {
+      action: "send",
+      target: "telegram:123",
+      message: "hi",
+    });
+
+    const call = mocks.runMessageAction.mock.calls[0]?.[0] as { cfg?: OpenClawConfig } | undefined;
+    expect(call?.cfg).toBe(loadedCfg);
+  });
+
+  it("falls back to the captured provider config when the runtime snapshot lacks that channel", async () => {
+    mockSendResult({ to: "telegram:123" });
+
+    const runtimeCfg: OpenClawConfig = {
+      tools: {
+        message: {
+          broadcast: {
+            enabled: false,
           },
         },
       },
-    } as never;
+      channels: {
+        discord: {
+          token: "discord-token",
+        },
+      },
+    };
+    const capturedCfg: OpenClawConfig = {
+      tools: {
+        message: {
+          broadcast: {
+            enabled: true,
+          },
+        },
+      },
+      channels: {
+        telegram: {
+          botToken: "captured-telegram-token",
+        },
+      },
+    };
+    vi.spyOn(configModule, "getRuntimeConfigSnapshot").mockReturnValue(runtimeCfg);
+
+    const tool = createMessageTool({ config: capturedCfg });
+    await tool.execute("1", {
+      action: "send",
+      target: "telegram:123",
+      message: "hi",
+    });
+
+    const call = mocks.runMessageAction.mock.calls[0]?.[0] as { cfg?: OpenClawConfig } | undefined;
+    expect(call?.cfg).not.toBe(runtimeCfg);
+    expect(call?.cfg?.channels?.telegram).toEqual(capturedCfg.channels.telegram);
+    expect(call?.cfg?.tools?.message?.broadcast?.enabled).toBe(false);
+  });
+
+  it("clones the runtime snapshot before dispatching send", async () => {
+    const runtimeCfg: OpenClawConfig = {
+      channels: {
+        telegram: {
+          botToken: "resolved-token",
+        },
+      },
+    };
+    vi.spyOn(configModule, "getRuntimeConfigSnapshot").mockReturnValue(runtimeCfg);
+    mocks.runMessageAction.mockClear();
+    mocks.runMessageAction.mockImplementation(async ({ cfg }: { cfg: OpenClawConfig }) => {
+      if (runtimeCfg.channels?.telegram) {
+        runtimeCfg.channels.telegram.botToken = "mutated-token";
+      }
+      expect(cfg).not.toBe(runtimeCfg);
+      expect(cfg.channels?.telegram?.botToken).toBe("resolved-token");
+      return {
+        kind: "send",
+        action: "send",
+        channel: "telegram",
+        to: "telegram:123",
+        handledBy: "plugin",
+        payload: {},
+        dryRun: true,
+      } satisfies MessageActionRunResult;
+    });
 
     const tool = createMessageTool({
-      config: rawCapturedCfg,
+      config: {
+        channels: {
+          telegram: {
+            botToken: "captured-token",
+          },
+        },
+      },
     });
 
     await tool.execute("1", {
@@ -168,9 +335,6 @@ describe("message tool path passthrough", () => {
       target: "telegram:123",
       message: "hi",
     });
-
-    const call = mocks.runMessageAction.mock.calls[0]?.[0];
-    expect(call?.cfg).toBe(runtimeCfg);
   });
 });
 
