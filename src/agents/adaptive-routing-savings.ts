@@ -54,6 +54,7 @@ export type AdaptiveRoutingSavingsLedger = {
     /** Tokens from local-success runs only (v2 field, backfilled as 0). */
     localSuccessTokensInput?: number;
     localSuccessTokensOutput?: number;
+    localSuccessTokensCacheRead?: number;
   };
 };
 
@@ -180,6 +181,7 @@ export async function recordAdaptiveRun(
         t.localTokensCacheRead += local.cacheRead;
         t.localSuccessTokensInput = (t.localSuccessTokensInput ?? 0) + local.input;
         t.localSuccessTokensOutput = (t.localSuccessTokensOutput ?? 0) + local.output;
+        t.localSuccessTokensCacheRead = (t.localSuccessTokensCacheRead ?? 0) + local.cacheRead;
       } else if (params.kind === "local_forced") {
         // Validation failed but escalation was capped — don't inflate runsLocal
         // or localSuccessTokens (those track genuinely passing runs only).
@@ -244,7 +246,9 @@ export function computeSavingsMetrics(ledger: AdaptiveRoutingSavingsLedger) {
   const hasPerRunTypeTokens =
     t.localSuccessTokensInput != null && t.localSuccessTokensOutput != null;
   const localOnlyTokens = hasPerRunTypeTokens
-    ? (t.localSuccessTokensInput ?? 0) + (t.localSuccessTokensOutput ?? 0)
+    ? (t.localSuccessTokensInput ?? 0) +
+      (t.localSuccessTokensOutput ?? 0) +
+      (t.localSuccessTokensCacheRead ?? 0)
     : t.runsLocal === 0
       ? 0
       : Math.round(

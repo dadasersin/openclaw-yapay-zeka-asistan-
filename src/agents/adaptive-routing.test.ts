@@ -554,4 +554,22 @@ describe("runEmbeddedPiAgentWithAdaptiveRouting", () => {
     expect(runFn).toHaveBeenCalledTimes(2);
     expect(result).toBe(cloudResult);
   });
+
+  it("cloud escalation call sets _adaptiveEscalationDone to prevent re-entry", async () => {
+    const cloudResult = makeRunResult({ payloads: [{ text: "cloud result" }] });
+    let capturedCloudParams: RunEmbeddedPiAgentParams | undefined;
+
+    const runFn = vi.fn().mockImplementation(async (p: RunEmbeddedPiAgentParams) => {
+      if (p.provider === "ollama") {
+        p._onAttemptResult?.(makeAttemptResult({ assistantTexts: [] }));
+        return makeRunResult({ payloads: [] });
+      }
+      capturedCloudParams = p;
+      return cloudResult;
+    });
+
+    await runEmbeddedPiAgentWithAdaptiveRouting(makeParams(), runFn);
+
+    expect(capturedCloudParams?._adaptiveEscalationDone).toBe(true);
+  });
 });

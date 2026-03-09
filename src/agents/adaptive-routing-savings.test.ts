@@ -82,6 +82,7 @@ describe("recordAdaptiveRun", () => {
     expect(ledger.totals.localTokensInput).toBe(300);
     expect(ledger.totals.localTokensOutput).toBe(120);
     expect(ledger.totals.localTokensCacheRead).toBe(10);
+    expect(ledger.totals.localSuccessTokensCacheRead).toBe(10);
     expect(ledger.totals.cloudTokensInput).toBe(0);
   });
 
@@ -264,6 +265,33 @@ describe("computeSavingsMetrics", () => {
     expect(m.cloudSavedTokens).toBe(450);
     expect(m.localTotal).toBe(600);
     expect(m.cloudTotal).toBe(700);
+  });
+
+  it("includes localSuccessTokensCacheRead in cloudSavedTokens (v2 fields)", () => {
+    const ledger = {
+      version: 1 as const,
+      since: "2026-01-01T00:00:00Z",
+      lastUpdated: "2026-01-01T00:00:00Z",
+      totals: {
+        runsTotal: 2,
+        runsLocal: 2,
+        runsEscalated: 0,
+        runsBypassed: 0,
+        localTokensInput: 200,
+        localTokensOutput: 100,
+        localTokensCacheRead: 50,
+        cloudTokensInput: 0,
+        cloudTokensOutput: 0,
+        cloudTokensCacheRead: 0,
+        runsLocalForced: 0,
+        localSuccessTokensInput: 200,
+        localSuccessTokensOutput: 100,
+        localSuccessTokensCacheRead: 50,
+      },
+    };
+    const m = computeSavingsMetrics(ledger);
+    // 200 + 100 + 50 = 350 (cache-read included)
+    expect(m.cloudSavedTokens).toBe(350);
   });
 });
 

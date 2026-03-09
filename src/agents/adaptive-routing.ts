@@ -593,6 +593,9 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
         provider: cloudProvider,
         model: cloudModel,
         sessionFile: originalSessionFile,
+        // Prevent re-entering adaptive routing if runFn is composed with
+        // the wrapper at an outer layer (avoids double-escalation).
+        _adaptiveEscalationDone: true,
         extraSystemPrompt: localSummaryExtra
           ? [params.extraSystemPrompt, localSummaryExtra].filter(Boolean).join("\n\n")
           : params.extraSystemPrompt,
