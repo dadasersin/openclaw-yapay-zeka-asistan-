@@ -666,6 +666,38 @@ describe("exec approval handlers", () => {
     expect(resolveRespond).toHaveBeenCalledWith(true, { ok: true }, undefined);
   });
 
+  it("allows resolving approvals by unique id prefix", async () => {
+    const { handlers, broadcasts, respond, context } = createExecApprovalFixture();
+
+    const requestPromise = requestExecApproval({
+      handlers,
+      respond,
+      context,
+      params: { host: "gateway" },
+    });
+
+    const requested = broadcasts.find((entry) => entry.event === "exec.approval.requested");
+    const fullId = (requested?.payload as { id?: string })?.id ?? "";
+    expect(fullId).not.toBe("");
+
+    const prefix = fullId.slice(0, 8);
+    const resolveRespond = vi.fn();
+    await resolveExecApproval({
+      handlers,
+      id: prefix,
+      respond: resolveRespond,
+      context,
+    });
+
+    await requestPromise;
+    expect(resolveRespond).toHaveBeenCalledWith(true, { ok: true }, undefined);
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ id: fullId, decision: "allow-once" }),
+      undefined,
+    );
+  });
+
   it("forwards turn-source metadata to exec approval forwarding", async () => {
     vi.useFakeTimers();
     try {
