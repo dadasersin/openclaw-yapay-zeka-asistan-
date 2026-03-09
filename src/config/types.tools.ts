@@ -319,6 +319,14 @@ export type MemorySearchConfig = {
   sources?: Array<"memory" | "sessions">;
   /** Extra paths to include in memory search (directories or .md files). */
   extraPaths?: string[];
+  /** Per-agent QMD extra collections. */
+  qmd?: {
+    extraCollections?: Array<{
+      name?: string;
+      path: string;
+      pattern?: string;
+    }>;
+  };
   /** Experimental memory search settings. */
   experimental?: {
     /** Enable session transcript indexing (experimental, default: false). */
