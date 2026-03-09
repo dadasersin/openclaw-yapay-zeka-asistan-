@@ -116,6 +116,8 @@ type UsageAccumulator = {
   lastCacheRead: number;
   lastCacheWrite: number;
   lastInput: number;
+  /** Number of LLM API calls accumulated across all attempts. */
+  callCount: number;
 };
 
 const createUsageAccumulator = (): UsageAccumulator => ({
@@ -127,6 +129,7 @@ const createUsageAccumulator = (): UsageAccumulator => ({
   lastCacheRead: 0,
   lastCacheWrite: 0,
   lastInput: 0,
+  callCount: 0,
 });
 
 function createCompactionDiagId(): string {
@@ -174,6 +177,7 @@ const mergeUsageIntoAccumulator = (
   target.lastCacheRead = usage.cacheRead ?? 0;
   target.lastCacheWrite = usage.cacheWrite ?? 0;
   target.lastInput = usage.input ?? 0;
+  target.callCount += usage.callCount ?? 0;
 };
 
 const toNormalizedUsage = (usage: UsageAccumulator) => {
@@ -201,6 +205,7 @@ const toNormalizedUsage = (usage: UsageAccumulator) => {
     cacheRead: usage.lastCacheRead || undefined,
     cacheWrite: usage.lastCacheWrite || undefined,
     total: lastPromptTokens + usage.output || undefined,
+    callCount: usage.callCount > 0 ? usage.callCount : undefined,
   };
 };
 
