@@ -100,15 +100,17 @@ export function resolveSignatureProviders(
   const providers: HookSignatureProvider[] = [];
   for (const [name, cfg] of Object.entries(signatures)) {
     if (!cfg.secret?.trim()) {
-      continue; // Skip providers with empty secrets (defense-in-depth; schema also validates)
+      throw new Error(
+        `hooks.signatures.${name}: secret is empty or blank — provider would never authenticate any request`,
+      );
     }
     providers.push({
       name,
-      header: cfg.header.toLowerCase(),
+      header: cfg.header.trim().toLowerCase(),
       algorithm: (cfg.algorithm ?? "sha256") as HookSignatureAlgorithm,
       secret: cfg.secret,
       format: (cfg.format ?? "hex") as HookSignatureFormat,
-      timestampHeader: cfg.timestampHeader?.toLowerCase(),
+      timestampHeader: cfg.timestampHeader?.trim().toLowerCase(),
       timestampMaxAgeSeconds: cfg.timestampMaxAgeSeconds ?? DEFAULT_TIMESTAMP_MAX_AGE_SECONDS,
     });
   }

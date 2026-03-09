@@ -300,14 +300,25 @@ describe("hooks-signature", () => {
       ]);
     });
 
-    test("skips providers with empty secret", () => {
+    test("throws for providers with empty secret", () => {
+      expect(() =>
+        resolveSignatureProviders({
+          empty: { header: "x-sig", secret: "" },
+        }),
+      ).toThrow(/secret is empty or blank/);
+      expect(() =>
+        resolveSignatureProviders({
+          whitespace: { header: "x-sig", secret: "   " },
+        }),
+      ).toThrow(/secret is empty or blank/);
+    });
+
+    test("trims header names before lowercasing", () => {
       const providers = resolveSignatureProviders({
-        valid: { header: "x-sig", secret: "real-secret" },
-        empty: { header: "x-sig2", secret: "" },
-        whitespace: { header: "x-sig3", secret: "   " },
+        test: { header: " X-Hub-Signature-256 ", secret: "s", timestampHeader: " X-Timestamp " },
       });
-      expect(providers).toHaveLength(1);
-      expect(providers[0].name).toBe("valid");
+      expect(providers[0].header).toBe("x-hub-signature-256");
+      expect(providers[0].timestampHeader).toBe("x-timestamp");
     });
   });
 });
