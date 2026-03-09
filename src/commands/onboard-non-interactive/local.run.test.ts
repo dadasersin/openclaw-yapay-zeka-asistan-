@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const writeConfigFile = vi.hoisted(() => vi.fn(async () => {}));
 const logConfigUpdated = vi.hoisted(() => vi.fn());
 const isSystemdUserServiceAvailable = vi.hoisted(() => vi.fn(async () => true));
+const isValidProfileName = vi.hoisted(() => vi.fn(() => true));
 const applyOnboardingLocalWorkspaceConfig = vi.hoisted(() => vi.fn((config: unknown) => config));
 const applyWizardMetadata = vi.hoisted(() => vi.fn((config: unknown) => config));
 const ensureWorkspaceAndSessions = vi.hoisted(() => vi.fn(async () => {}));
@@ -44,6 +45,10 @@ vi.mock("../../config/logging.js", () => ({
 
 vi.mock("../../daemon/systemd.js", () => ({
   isSystemdUserServiceAvailable,
+}));
+
+vi.mock("../../cli/profile-utils.js", () => ({
+  isValidProfileName,
 }));
 
 vi.mock("../daemon-runtime.js", () => ({
@@ -101,6 +106,7 @@ describe("runNonInteractiveOnboardingLocal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isSystemdUserServiceAvailable.mockResolvedValue(true);
+    isValidProfileName.mockReturnValue(true);
     canEnableRescueWatchdog.mockReturnValue(true);
     resolveMonitoredProfileName.mockReturnValue("default");
     inferAuthChoiceFromFlags.mockReturnValue({
@@ -151,6 +157,43 @@ describe("runNonInteractiveOnboardingLocal", () => {
     expect(runtime.error).toHaveBeenCalledWith("Rescue watchdog setup failed: boom");
     expect(runtime.exit).toHaveBeenCalledWith(1);
     expect(logNonInteractiveOnboardingJson).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid OPENCLAW_PROFILE before forcing daemon install", async () => {
+    const previousProfile = process.env.OPENCLAW_PROFILE;
+    try {
+      process.env.OPENCLAW_PROFILE = "../oops";
+      resolveMonitoredProfileName.mockReturnValue("../oops");
+      isValidProfileName.mockReturnValue(false);
+      const runtime = {
+        log: vi.fn(),
+        error: vi.fn(),
+        exit: vi.fn(),
+      };
+
+      await runNonInteractiveOnboardingLocal({
+        opts: {
+          acceptRisk: true,
+          authChoice: "skip",
+          rescueWatchdog: true,
+          skipHealth: true,
+          skipSkills: true,
+        },
+        runtime,
+        baseConfig: {},
+      });
+
+      expect(runtime.error).toHaveBeenCalledWith('Invalid OPENCLAW_PROFILE: "../oops"');
+      expect(runtime.exit).toHaveBeenCalledWith(2);
+      expect(installGatewayDaemonNonInteractive).not.toHaveBeenCalled();
+      expect(setupRescueWatchdog).not.toHaveBeenCalled();
+    } finally {
+      if (previousProfile === undefined) {
+        delete process.env.OPENCLAW_PROFILE;
+      } else {
+        process.env.OPENCLAW_PROFILE = previousProfile;
+      }
+    }
   });
 
   it("exits non-zero when the primary managed service install fails before rescue setup", async () => {

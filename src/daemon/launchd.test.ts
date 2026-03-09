@@ -24,6 +24,13 @@ const state = vi.hoisted(() => ({
   files: new Map<string, string>(),
   fileModes: new Map<string, number>(),
 }));
+
+vi.mock("node:os", () => ({
+  default: {
+    homedir: vi.fn(() => "/Users/test"),
+  },
+  homedir: vi.fn(() => "/Users/test"),
+}));
 const defaultProgramArguments = ["node", "-e", "process.exit(0)"];
 
 function normalizeLaunchctlArgs(file: string, args: string[]): string[] {
@@ -330,6 +337,26 @@ describe("launchd install", () => {
     expect(plist).toContain(`<string>${tmpDir}</string>`);
   });
 
+  it("uses the process homedir instead of a conflicting HOME override for plist paths", async () => {
+    const env = {
+      ...createDefaultLaunchdEnv(),
+      HOME: "/tmp/attacker-home",
+    };
+
+    await installLaunchAgent({
+      env,
+      stdout: new PassThrough(),
+      programArguments: defaultProgramArguments,
+    });
+
+    expect(resolveLaunchAgentPlistPath(env)).toBe(
+      "/Users/test/Library/LaunchAgents/ai.openclaw.gateway.plist",
+    );
+    expect(
+      state.files.has("/tmp/attacker-home/Library/LaunchAgents/ai.openclaw.gateway.plist"),
+    ).toBe(false);
+  });
+
   it("writes KeepAlive=true policy with restrictive umask", async () => {
     const env = createDefaultLaunchdEnv();
     await installLaunchAgent({
@@ -361,9 +388,9 @@ describe("launchd install", () => {
     });
 
     const plistPath = resolveLaunchAgentPlistPath(env);
-    expect(state.dirModes.get("/Users/test/Library")).toBe(0o755);
+    expect(state.dirModes.get("/Users/test/Library")).toBe(0o777);
     expect(state.dirModes.get("/Users/test/Library/LaunchAgents")).toBe(0o755);
-    expect(state.fileModes.get(plistPath)).toBe(0o644);
+    expect(state.fileModes.get(plistPath)).toBe(0o600);
   });
 
   it("rejects symlinked launch agent directories", async () => {

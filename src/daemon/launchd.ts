@@ -1,5 +1,6 @@
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { parseStrictInteger, parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
 import {
@@ -27,7 +28,12 @@ import type {
 } from "./service-types.js";
 
 const LAUNCH_AGENT_DIR_MODE = 0o755;
-const LAUNCH_AGENT_PLIST_MODE = 0o644;
+const LAUNCH_AGENT_PLIST_MODE = 0o600;
+
+function resolveTrustedLaunchAgentHome(env: Record<string, string | undefined>): string {
+  const home = os.homedir().trim() || resolveHomeDir(env);
+  return toPosixPath(home);
+}
 
 function resolveLaunchAgentLabel(args?: { env?: Record<string, string | undefined> }): string {
   const envLabel = args?.env?.OPENCLAW_LAUNCHD_LABEL?.trim();
@@ -41,7 +47,7 @@ function resolveLaunchAgentPlistPathForLabel(
   env: Record<string, string | undefined>,
   label: string,
 ): string {
-  const home = toPosixPath(resolveHomeDir(env));
+  const home = resolveTrustedLaunchAgentHome(env);
   return path.posix.join(home, "Library", "LaunchAgents", `${label}.plist`);
 }
 
@@ -315,8 +321,8 @@ export async function uninstallLegacyLaunchAgents({
     return agents;
   }
 
-  const home = toPosixPath(resolveHomeDir(env));
-  const trashDir = path.posix.join(home, ".Trash");
+  const trustedHome = resolveTrustedLaunchAgentHome(env);
+  const trashDir = path.posix.join(trustedHome, ".Trash");
   try {
     await fs.mkdir(trashDir, { recursive: true });
   } catch {
@@ -362,8 +368,7 @@ export async function uninstallLaunchAgent({
     return;
   }
 
-  const home = toPosixPath(resolveHomeDir(env));
-  const trashDir = path.posix.join(home, ".Trash");
+  const trashDir = path.posix.join(resolveTrustedLaunchAgentHome(env), ".Trash");
   const dest = path.join(trashDir, `${label}.plist`);
   try {
     await fs.mkdir(trashDir, { recursive: true });
@@ -454,9 +459,6 @@ export async function installLaunchAgent({
   }
 
   const plistPath = resolveLaunchAgentPlistPathForLabel(env, label);
-  const home = toPosixPath(resolveHomeDir(env));
-  const libraryDir = path.posix.join(home, "Library");
-  await ensureSecureDirectory(libraryDir);
   await ensureSecureDirectory(path.dirname(plistPath));
 
   const serviceDescription = resolveGatewayServiceDescription({ env, environment, description });

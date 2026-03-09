@@ -1,4 +1,5 @@
 import { formatCliCommand } from "../../cli/command-format.js";
+import { isValidProfileName } from "../../cli/profile-utils.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { resolveGatewayPort, writeConfigFile } from "../../config/config.js";
 import { logConfigUpdated } from "../../config/logging.js";
@@ -116,9 +117,15 @@ export async function runNonInteractiveOnboardingLocal(params: {
 
   const systemdAvailable =
     process.platform === "linux" ? await isSystemdUserServiceAvailable() : true;
+  const monitoredProfile = resolveMonitoredProfileName(process.env.OPENCLAW_PROFILE ?? "default");
+  if (monitoredProfile !== "default" && !isValidProfileName(monitoredProfile)) {
+    runtime.error(`Invalid OPENCLAW_PROFILE: ${JSON.stringify(monitoredProfile)}`);
+    runtime.exit(2);
+    return;
+  }
   const rescuePlan = resolveNonInteractiveRescueWatchdogPlan({
     opts,
-    monitoredProfile: process.env.OPENCLAW_PROFILE ?? "default",
+    monitoredProfile,
     platform: process.platform,
     systemdAvailable,
   });
@@ -163,7 +170,7 @@ export async function runNonInteractiveOnboardingLocal(params: {
         sourceConfig: nextConfig,
         workspaceDir,
         mainPort: gatewayResult.port,
-        monitoredProfile: process.env.OPENCLAW_PROFILE,
+        monitoredProfile,
         runtime: daemonRuntimeRaw,
         output: {
           log: runtime.log,
