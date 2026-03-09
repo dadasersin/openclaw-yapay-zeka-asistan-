@@ -6,6 +6,8 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Browser: disable Chrome ML model downloads (OptimizationGuide, ChromeWasmTts) by default to avoid unnecessary bandwidth and disk usage in all environments.
+
 ### Breaking
 
 ### Fixes
