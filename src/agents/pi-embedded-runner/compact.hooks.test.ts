@@ -174,6 +174,7 @@ vi.mock("../agent-paths.js", () => ({
 }));
 
 vi.mock("../agent-scope.js", () => ({
+  resolveAgentUserTimezone: vi.fn(() => "UTC"),
   resolveSessionAgentIds: vi.fn(() => ({ defaultAgentId: "main", sessionAgentId: "main" })),
 }));
 
