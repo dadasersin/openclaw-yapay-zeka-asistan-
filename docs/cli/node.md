@@ -53,6 +53,7 @@ Options:
 
 - `--host <host>`: Gateway WebSocket host (default: `127.0.0.1`)
 - `--port <port>`: Gateway WebSocket port (default: `18789`)
+- `--context <path>`: Gateway WebSocket path prefix / context path when behind a reverse proxy (example: `xydt-maas-openclaw/zx-paas/claw-r17xdv/nodes`)
 - `--tls`: Use TLS for the gateway connection
 - `--tls-fingerprint <sha256>`: Expected TLS certificate fingerprint (sha256)
 - `--node-id <id>`: Override node id (clears pairing token)
@@ -80,6 +81,7 @@ Options:
 
 - `--host <host>`: Gateway WebSocket host (default: `127.0.0.1`)
 - `--port <port>`: Gateway WebSocket port (default: `18789`)
+- `--context <path>`: Gateway WebSocket path prefix / context path when behind a reverse proxy (example: `xydt-maas-openclaw/zx-paas/claw-r17xdv/nodes`)
 - `--tls`: Use TLS for the gateway connection
 - `--tls-fingerprint <sha256>`: Expected TLS certificate fingerprint (sha256)
 - `--node-id <id>`: Override node id (clears pairing token)
