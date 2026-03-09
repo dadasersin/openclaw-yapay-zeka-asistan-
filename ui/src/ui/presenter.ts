@@ -23,10 +23,12 @@ export function formatNextRun(ms?: number | null) {
 }
 
 export function formatSessionTokens(row: GatewaySessionRow) {
-  if (row.totalTokens == null) {
+  const total = row.totalTokens;
+  // Show token count even when not fresh (totalTokensFresh === false)
+  // The count might be from cache but is still useful information
+  if (typeof total !== "number" || !Number.isFinite(total) || total < 0) {
     return "n/a";
   }
-  const total = row.totalTokens ?? 0;
   const ctx = row.contextTokens ?? 0;
   return ctx ? `${total} / ${ctx}` : String(total);
 }

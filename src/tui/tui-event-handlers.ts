@@ -204,6 +204,8 @@ export function createEventHandlers(context: EventHandlerContext) {
       }
       chatLog.updateAssistant(displayText, evt.runId);
       setActivityStatus("streaming");
+      tui.requestRender();
+      return;
     }
     if (evt.state === "final") {
       const wasActiveRun = state.activeChatRunId === evt.runId;
