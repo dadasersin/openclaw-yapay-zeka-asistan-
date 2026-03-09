@@ -34,6 +34,7 @@ import { renderTelegramHtmlText } from "./format.js";
 import {
   type ArchivedPreview,
   createLaneDeliveryStateTracker,
+  type LaneDeliveryResult,
   createLaneTextDeliverer,
   type DraftLaneState,
   type LaneName,
@@ -245,6 +246,8 @@ export const dispatchTelegramMessage = async ({
   const answerLane = lanes.answer;
   const reasoningLane = lanes.reasoning;
   let splitReasoningOnNextStream = false;
+  let answerLaneNeedsBoundaryReset = false;
+  let clearAnswerPreviewOnBoundaryReset = false;
   let skipNextAnswerMessageStartRotation = false;
   let draftLaneEventQueue = Promise.resolve();
   const reasoningStepState = createTelegramReasoningStepState();
@@ -282,7 +285,15 @@ export const dispatchTelegramMessage = async ({
   };
   const rotateAnswerLaneForNewAssistantMessage = async () => {
     let didForceNewMessage = false;
-    if (answerLane.hasStreamedMessage) {
+    if (answerLaneNeedsBoundaryReset) {
+      if (clearAnswerPreviewOnBoundaryReset) {
+        await answerLane.stream?.clear();
+      }
+      answerLane.stream?.forceNewMessage();
+      answerLaneNeedsBoundaryReset = false;
+      clearAnswerPreviewOnBoundaryReset = false;
+      didForceNewMessage = true;
+    } else if (answerLane.hasStreamedMessage) {
       // Materialize the current streamed draft into a permanent message
       // so it remains visible across tool boundaries.
       const materializedId = await answerLane.stream?.materialize?.();
@@ -330,7 +341,7 @@ export const dispatchTelegramMessage = async ({
   const ingestDraftLaneSegments = async (text: string | undefined) => {
     const split = splitTextIntoLaneSegments(text);
     const hasAnswerSegment = split.segments.some((segment) => segment.lane === "answer");
-    if (hasAnswerSegment && finalizedPreviewByLane.answer) {
+    if (hasAnswerSegment && (finalizedPreviewByLane.answer || answerLaneNeedsBoundaryReset)) {
       // Some providers can emit the first partial of a new assistant message before
       // onAssistantMessageStart() arrives. Rotate preemptively so we do not edit
       // the previously finalized preview message with the next message's text.
@@ -490,6 +501,13 @@ export const dispatchTelegramMessage = async ({
       deliveryState.markDelivered();
     },
   });
+  const noteAnswerFinalWithoutPreview = (result: LaneDeliveryResult) => {
+    if (result !== "sent") {
+      return;
+    }
+    answerLaneNeedsBoundaryReset = true;
+    clearAnswerPreviewOnBoundaryReset = answerLane.hasStreamedMessage;
+  };
 
   let queuedFinal = false;
 
@@ -540,13 +558,14 @@ export const dispatchTelegramMessage = async ({
                 | { buttons?: TelegramInlineButtons }
                 | undefined
             )?.buttons;
-            await deliverLaneText({
+            const result = await deliverLaneText({
               laneName: "answer",
               text: buffered.text,
               payload: buffered.payload,
               infoKind: "final",
               previewButtons: bufferedButtons,
             });
+            noteAnswerFinalWithoutPreview(result);
             reasoningStepState.resetForNextStep();
           };
 
@@ -578,6 +597,7 @@ export const dispatchTelegramMessage = async ({
               continue;
             }
             if (info.kind === "final") {
+              noteAnswerFinalWithoutPreview(result);
               if (reasoningLane.hasStreamedMessage) {
                 finalizedPreviewByLane.reasoning = true;
               }
