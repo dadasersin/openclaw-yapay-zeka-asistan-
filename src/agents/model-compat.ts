@@ -54,8 +54,10 @@ export function normalizeModelCompat(model: Model<Api>): Model<Api> {
 
   // The `developer` role and stream usage chunks are OpenAI-native behaviors.
   // Many OpenAI-compatible backends reject `developer` and/or emit usage-only
-  // chunks that break strict parsers expecting choices[0]. For non-native
-  // openai-completions endpoints, force both compat flags off.
+  // chunks that break strict parsers expecting choices[0]. Additionally, the
+  // `strict` boolean inside tools validation is rejected by several providers
+  // causing tool calls to be ignored. For non-native openai-completions endpoints,
+  // force these compat flags off.
   const compat = model.compat ?? undefined;
   // When baseUrl is empty the pi-ai library defaults to api.openai.com, so
   // leave compat unchanged and let default native behavior apply.
@@ -65,7 +67,11 @@ export function normalizeModelCompat(model: Model<Api>): Model<Api> {
   if (!needsForce) {
     return model;
   }
-  if (compat?.supportsDeveloperRole === false && compat?.supportsUsageInStreaming === false) {
+  if (
+    compat?.supportsDeveloperRole === false &&
+    compat?.supportsUsageInStreaming === false &&
+    compat?.supportsStrictMode === false
+  ) {
     return model;
   }
 
@@ -73,7 +79,16 @@ export function normalizeModelCompat(model: Model<Api>): Model<Api> {
   return {
     ...model,
     compat: compat
-      ? { ...compat, supportsDeveloperRole: false, supportsUsageInStreaming: false }
-      : { supportsDeveloperRole: false, supportsUsageInStreaming: false },
+      ? {
+          ...compat,
+          supportsDeveloperRole: false,
+          supportsUsageInStreaming: false,
+          supportsStrictMode: false,
+        }
+      : {
+          supportsDeveloperRole: false,
+          supportsUsageInStreaming: false,
+          supportsStrictMode: false,
+        },
   } as typeof model;
 }
