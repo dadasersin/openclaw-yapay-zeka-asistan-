@@ -34,7 +34,7 @@ const BROWSER_TOOL_ACTIONS = [
   "act",
 ] as const;
 
-const BROWSER_TARGETS = ["sandbox", "host", "node"] as const;
+const BROWSER_TARGETS = ["sandbox", "host", "node", "cloud"] as const;
 
 const BROWSER_SNAPSHOT_FORMATS = ["aria", "ai"] as const;
 const BROWSER_SNAPSHOT_MODES = ["efficient"] as const;
