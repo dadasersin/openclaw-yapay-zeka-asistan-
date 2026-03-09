@@ -188,7 +188,7 @@ export async function preflightDiscordMessage(
   if (author.bot) {
     if (allowBotsMode === "off" && !sender.isPluralKit) {
       logDebug(
-        `[discord-preflight] drop: bot message from ${author.username ?? author.id} (allowBots is false; set channels.discord.allowBots to true or "mentions" to accept bot messages)`,
+        `[discord-preflight] drop: bot message from ${author.username ?? author.id} (allowBots not enabled; set channels.discord.allowBots to true or "mentions" to accept bot messages)`,
       );
       return null;
     }
