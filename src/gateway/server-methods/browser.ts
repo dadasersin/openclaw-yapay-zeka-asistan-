@@ -6,6 +6,7 @@ import {
 import { applyBrowserProxyPaths, persistBrowserProxyFiles } from "../../browser/proxy-files.js";
 import { createBrowserRouteDispatcher } from "../../browser/routes/dispatcher.js";
 import { loadConfig } from "../../config/config.js";
+import { withTimeout } from "../../node-host/with-timeout.js";
 import { isNodeCommandAllowed, resolveNodeCommandAllowlist } from "../node-command-policy.js";
 import type { NodeSession } from "../node-registry.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
@@ -19,6 +20,38 @@ type BrowserRequestParams = {
   body?: unknown;
   timeoutMs?: number;
 };
+
+const ABORT_AWARE_LOCAL_ACT_KINDS = new Set([
+  "click",
+  "type",
+  "press",
+  "hover",
+  "scrollIntoView",
+  "drag",
+  "select",
+  "fill",
+  "resize",
+  "wait",
+  "evaluate",
+  "close",
+]);
+
+function normalizeLocalBrowserPath(path: string) {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+function shouldWrapLocalBrowserRequestWithTimeout(params: { path: string; body?: unknown }) {
+  const path = normalizeLocalBrowserPath(params.path);
+  if (path === "/navigate" || path === "/pdf") {
+    return true;
+  }
+  if (path !== "/act" || !params.body || typeof params.body !== "object") {
+    return false;
+  }
+  const kind =
+    "kind" in params.body && typeof params.body.kind === "string" ? params.body.kind.trim() : "";
+  return ABORT_AWARE_LOCAL_ACT_KINDS.has(kind);
+}
 
 function resolveRequestedProfile(params: {
   query?: Record<string, unknown>;
@@ -244,12 +277,34 @@ export const browserHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    const result = await dispatcher.dispatch({
-      method: methodRaw,
-      path,
-      query,
-      body,
-    });
+    const shouldApplyLocalTimeout =
+      timeoutMs !== undefined && shouldWrapLocalBrowserRequestWithTimeout({ path, body });
+
+    let result;
+    try {
+      result = shouldApplyLocalTimeout
+        ? await withTimeout(
+            async (signal) =>
+              await dispatcher.dispatch({
+                method: methodRaw,
+                path,
+                query,
+                body,
+                signal,
+              }),
+            timeoutMs,
+            "browser request",
+          )
+        : await dispatcher.dispatch({
+            method: methodRaw,
+            path,
+            query,
+            body,
+          });
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+      return;
+    }
 
     if (result.status >= 400) {
       const message =
