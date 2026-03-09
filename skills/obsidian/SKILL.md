@@ -6,7 +6,6 @@ metadata:
   {
     "openclaw":
       {
-        "os": ["darwin"],
         "emoji": "💎",
         "requires": { "bins": ["obsidian-cli"] },
         "install":
