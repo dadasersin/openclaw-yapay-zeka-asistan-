@@ -6,6 +6,7 @@ import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
 import { formatHelpExamples } from "../help-format.js";
+import { registerBackupScheduleCommand } from "./register.backup-schedule.js";
 
 export function registerBackupCommand(program: Command) {
   const backup = program
@@ -89,4 +90,5 @@ export function registerBackupCommand(program: Command) {
         });
       });
     });
+  registerBackupScheduleCommand(backup);
 }
