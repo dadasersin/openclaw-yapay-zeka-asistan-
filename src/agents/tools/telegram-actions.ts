@@ -320,6 +320,7 @@ export async function handleTelegramAction(
     const messageId = readNumberParam(params, "messageId", {
       required: true,
       integer: true,
+      strict: true,
     });
     const token = resolveTelegramToken(cfg, { accountId }).token;
     if (!token) {
@@ -346,6 +347,7 @@ export async function handleTelegramAction(
     const topicId = readNumberParam(params, "topicId", {
       required: true,
       integer: true,
+      strict: true,
     });
     const token = resolveTelegramToken(cfg, { accountId }).token;
     if (!token) {
