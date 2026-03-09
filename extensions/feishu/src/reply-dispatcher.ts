@@ -258,15 +258,15 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
           const useCard = renderMode === "card" || (renderMode === "auto" && shouldUseCard(text));
 
           if (info?.kind === "block") {
-            // Drop internal block chunks unless we can safely consume them as
-            // streaming-card fallback content.
-            if (!(streamingEnabled && useCard)) {
-              return;
+            if (streamingEnabled && useCard) {
+              startStreaming();
+              if (streamingStartPromise) {
+                await streamingStartPromise;
+              }
             }
-            startStreaming();
-            if (streamingStartPromise) {
-              await streamingStartPromise;
-            }
+            // When streaming is active, the block is consumed via streaming card
+            // update below. Otherwise, fall through to the normal text sending
+            // path so ACP dispatch replies reach the user as plain messages.
           }
 
           if (info?.kind === "final" && streamingEnabled && useCard) {

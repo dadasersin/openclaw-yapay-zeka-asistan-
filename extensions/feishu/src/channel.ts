@@ -404,5 +404,12 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         accountId: ctx.accountId,
       });
     },
+    stopAccount: async (ctx) => {
+      const { getFeishuThreadBindingManager } = await import("./thread-bindings.js");
+      const manager = getFeishuThreadBindingManager(ctx.accountId);
+      if (manager) {
+        manager.stop();
+      }
+    },
   },
 };

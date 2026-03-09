@@ -38,6 +38,7 @@ import { normalizeSessionDeliveryFields } from "../../utils/delivery-context.js"
 import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 import { resolveEffectiveResetTargetSessionKey } from "./acp-reset-target.js";
+import { resolveFeishuConversationId } from "./feishu-context.js";
 import { normalizeInboundTextNewlines } from "./inbound-text.js";
 import { stripMentions, stripStructuralPrefixes } from "./mentions.js";
 import {
@@ -132,6 +133,22 @@ function resolveAcpResetBindingContext(ctx: MsgContext): {
       conversationId,
       ...(parentConversationId ? { parentConversationId } : {}),
     };
+  }
+
+  if (channelRaw === "feishu") {
+    const conversationId = resolveFeishuConversationId({
+      ctx: {
+        MessageThreadId: normalizedThreadId || undefined,
+        ChatType: normalizeSessionText(ctx.ChatType) || undefined,
+        OriginatingTo: normalizeSessionText(ctx.OriginatingTo) || undefined,
+        To: normalizeSessionText(ctx.To) || undefined,
+      },
+      command: {},
+    });
+    if (!conversationId) {
+      return null;
+    }
+    return { channel: channelRaw, accountId, conversationId };
   }
 
   const conversationId = resolveConversationIdFromTargets({
