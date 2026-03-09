@@ -46,6 +46,7 @@ vi.mock("./gateway-install-token.js", () => ({
 }));
 
 vi.mock("./onboard-helpers.js", () => ({
+  randomToken: vi.fn(() => "generated-rescue-token"),
   waitForGatewayReachable,
 }));
 

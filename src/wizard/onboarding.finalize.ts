@@ -104,13 +104,17 @@ export async function finalizeOnboardingWizard(
       "Rescue watchdog",
     );
   } else if (canEnableRescueWatchdog(monitoredProfile)) {
+    const shouldPromptForRescueWatchdog =
+      explicitRescueWatchdog === undefined && flow !== "quickstart";
     rescueWatchdogEnabled =
       explicitRescueWatchdog ??
-      (await prompter.confirm({
-        message:
-          "Enable rescue watchdog (second isolated gateway that auto-restarts this profile if it goes unhealthy)",
-        initialValue: false,
-      }));
+      (shouldPromptForRescueWatchdog
+        ? await prompter.confirm({
+            message:
+              "Enable rescue watchdog (second isolated gateway that auto-restarts this profile if it goes unhealthy)",
+            initialValue: false,
+          })
+        : false);
   }
   let installDaemon: boolean;
   if (explicitInstallDaemon !== undefined) {

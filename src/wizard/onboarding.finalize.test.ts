@@ -363,4 +363,43 @@ describe("finalizeOnboardingWizard", () => {
     );
     expect(setupRescueWatchdog).not.toHaveBeenCalled();
   });
+
+  it("does not prompt for rescue watchdog in quickstart unless explicitly requested", async () => {
+    const confirm = vi.fn(async () => false);
+    const prompter = buildWizardPrompter({
+      select: vi.fn(async () => "later") as never,
+      confirm: confirm as never,
+    });
+
+    await finalizeOnboardingWizard({
+      flow: "quickstart",
+      opts: {
+        acceptRisk: true,
+        authChoice: "skip",
+        skipHealth: true,
+        skipUi: true,
+      },
+      baseConfig: {},
+      nextConfig: {},
+      workspaceDir: "/tmp",
+      settings: {
+        port: 18789,
+        bind: "loopback",
+        authMode: "token",
+        gatewayToken: "session-token",
+        tailscaleMode: "off",
+        tailscaleResetOnExit: false,
+      },
+      prompter,
+      runtime: createRuntime(),
+    });
+
+    expect(confirm).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "Enable rescue watchdog (second isolated gateway that auto-restarts this profile if it goes unhealthy)",
+      }),
+    );
+    expect(setupRescueWatchdog).not.toHaveBeenCalled();
+  });
 });

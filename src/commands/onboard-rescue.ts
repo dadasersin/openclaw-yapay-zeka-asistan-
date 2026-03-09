@@ -15,7 +15,7 @@ import { resolveUserPath } from "../utils.js";
 import { buildGatewayInstallPlan, gatewayInstallErrorHint } from "./daemon-install-helpers.js";
 import { DEFAULT_GATEWAY_DAEMON_RUNTIME, type GatewayDaemonRuntime } from "./daemon-runtime.js";
 import { resolveGatewayInstallToken } from "./gateway-install-token.js";
-import { waitForGatewayReachable } from "./onboard-helpers.js";
+import { randomToken, waitForGatewayReachable } from "./onboard-helpers.js";
 
 const RESCUE_JOB_NAME_PREFIX = "Rescue watchdog";
 const RESCUE_PROFILE_SUFFIX = "-rescue";
@@ -80,7 +80,7 @@ function resolveRescueGatewayToken(existingConfig: OpenClawConfig | undefined): 
   if (typeof existing === "string" && existing.trim()) {
     return existing.trim();
   }
-  return `rescue-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  return `rescue-${randomToken()}`;
 }
 
 function resolveRescueToolProfile(sourceProfile: unknown, existingProfile: unknown): ToolProfileId {
@@ -192,12 +192,11 @@ function buildRescueEnv(profile: string): NodeJS.ProcessEnv {
 }
 
 async function syncRescueAuthProfiles(params: { rescueEnv: NodeJS.ProcessEnv }) {
-  const rescueAgentDir = path.join(
-    params.rescueEnv.OPENCLAW_STATE_DIR ?? "",
-    "agents",
-    DEFAULT_AGENT_ID,
-    "agent",
-  );
+  const rescueStateDir = params.rescueEnv.OPENCLAW_STATE_DIR?.trim();
+  if (!rescueStateDir) {
+    throw new Error("Rescue watchdog setup failed: rescue profile state dir was not resolved.");
+  }
+  const rescueAgentDir = path.join(rescueStateDir, "agents", DEFAULT_AGENT_ID, "agent");
   await fs.mkdir(rescueAgentDir, { recursive: true });
   // Load from the rescue agent dir so existing rescue-only credentials survive,
   // while the main profile store is still inherited/merged in by auth-profile loading.
