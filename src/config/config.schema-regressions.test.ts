@@ -133,6 +133,24 @@ describe("config schema regressions", () => {
     expect(res.ok).toBe(true);
   });
 
+  it("accepts per-agent params overrides", () => {
+    const res = validateConfigObject({
+      agents: {
+        list: [
+          {
+            id: "main",
+            model: "anthropic/claude-opus-4-6",
+            params: {
+              cacheRetention: "none",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.ok).toBe(true);
+  });
+
   it("rejects non-positive pdf limits", () => {
     const res = validateConfigObject({
       agents: {
