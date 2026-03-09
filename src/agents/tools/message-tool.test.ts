@@ -15,7 +15,7 @@ vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
   return {
     ...actual,
-    getOAuthProviders: actual.getOAuthProviders ?? (() => []),
+    getProviders: actual.getProviders ?? (() => []),
   };
 });
 
@@ -289,7 +289,7 @@ describe("message tool runtime config fallback", () => {
 
     const call = mocks.runMessageAction.mock.calls[0]?.[0] as { cfg?: OpenClawConfig } | undefined;
     expect(call?.cfg).not.toBe(runtimeCfg);
-    expect(call?.cfg?.channels?.telegram).toEqual(capturedCfg.channels.telegram);
+    expect(call?.cfg?.channels?.telegram).toEqual(capturedCfg.channels?.telegram);
     expect(call?.cfg?.tools?.message?.broadcast?.enabled).toBe(false);
   });
 
