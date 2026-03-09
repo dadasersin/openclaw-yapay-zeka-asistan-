@@ -130,7 +130,7 @@ function isBrowserNode(node: NodeListNode) {
 
 async function resolveBrowserNodeTarget(params: {
   requestedNode?: string;
-  target?: "sandbox" | "host" | "node";
+  target?: "sandbox" | "host" | "node" | "cloud";
   sandboxBridgeUrl?: string;
 }): Promise<BrowserNodeTarget | null> {
   const cfg = loadConfig();
@@ -298,7 +298,7 @@ export function createBrowserTool(opts?: {
       "When using refs from snapshot (e.g. e12), keep the same tab: prefer passing targetId from the snapshot response into subsequent actions (act/click/type/etc).",
       'For stable, self-resolving refs across calls, use snapshot with refs="aria" (Playwright aria-ref ids). Default refs="role" are role+name-based.',
       "Use snapshot+act for UI automation. Avoid act:wait by default; use only in exceptional cases when no reliable UI state exists.",
-      `target selects browser location (sandbox|host|node). Default: ${targetDefault}.`,
+      `target selects browser location (sandbox|host|node|cloud). Default: ${targetDefault}.`,
       hostHint,
     ].join(" "),
     parameters: BrowserToolSchema,
@@ -307,7 +307,12 @@ export function createBrowserTool(opts?: {
       const action = readStringParam(params, "action", { required: true });
       const profile = readStringParam(params, "profile");
       const requestedNode = readStringParam(params, "node");
-      let target = readStringParam(params, "target") as "sandbox" | "host" | "node" | undefined;
+      let target = readStringParam(params, "target") as
+        | "sandbox"
+        | "host"
+        | "node"
+        | "cloud"
+        | undefined;
 
       if (requestedNode && target && target !== "node") {
         throw new Error('node is only supported with target="node".');
@@ -316,6 +321,15 @@ export function createBrowserTool(opts?: {
       if (!target && !requestedNode && profile === "chrome") {
         // Chrome extension relay takeover is a host Chrome feature; prefer host unless explicitly targeting a node.
         target = "host";
+      }
+
+      // Cloud target: not yet implemented. Cloud browser requires a browser
+      // control bridge (not raw CDP), which needs a proxy layer in the cloud
+      // provider. This will be implemented in a follow-up PR.
+      if (target === "cloud") {
+        throw new Error(
+          'Cloud browser (target="cloud") is not yet implemented. Use target="host" or target="sandbox" instead.',
+        );
       }
 
       const nodeTarget = await resolveBrowserNodeTarget({
