@@ -92,6 +92,11 @@ function printStats(m: ReturnType<typeof computeSavingsMetrics>, ledgerFile: str
   lines.push(
     `  ${"Escalated to cloud".padEnd(24)} ${t(theme.warn, String(m.runsEscalated))}  (${pct(m.runsEscalated, m.runsTotal)} escalated)`,
   );
+  if (m.runsLocalForced > 0) {
+    lines.push(
+      `  ${"Local forced (capped)".padEnd(24)} ${t(theme.warn, String(m.runsLocalForced))}  (validation failed, escalation capped)`,
+    );
+  }
   lines.push(`  ${"Bypassed (override)".padEnd(24)} ${t(theme.muted, String(m.runsBypassed))}`);
   lines.push("");
 

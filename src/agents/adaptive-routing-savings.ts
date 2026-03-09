@@ -258,15 +258,19 @@ export function computeSavingsMetrics(ledger: AdaptiveRoutingSavingsLedger) {
   const cloudTotal = t.cloudTokensInput + t.cloudTokensOutput + (t.cloudTokensCacheRead ?? 0);
   const localTotal = t.localTokensInput + t.localTokensOutput + t.localTokensCacheRead;
 
+  const runsLocalForced = t.runsLocalForced ?? 0;
+
   return {
     runsTotal: t.runsTotal,
     runsLocal: t.runsLocal,
+    runsLocalForced,
     runsEscalated: t.runsEscalated,
     runsBypassed: t.runsBypassed,
     localTotal,
     cloudTotal,
     // Tokens processed entirely on the local model (no cloud charge).
     cloudSavedTokens: localOnlyTokens,
+    // Savings rate = genuinely passing local runs / total (excludes forced-local).
     savingsRate: pct(t.runsLocal, t.runsTotal),
     since: ledger.since,
     lastUpdated: ledger.lastUpdated,
