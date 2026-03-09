@@ -340,14 +340,39 @@ export function createTelegramDraftStream(params: {
     warnPrefix: "telegram stream preview cleanup failed",
   });
 
+  const clearDraftPreview = async (
+    draftId: number | undefined,
+    options?: { skipThread?: boolean },
+  ): Promise<void> => {
+    if (resolvedDraftApi == null || draftId == null) {
+      return;
+    }
+    const clearThreadParams =
+      !options?.skipThread && threadParams?.message_thread_id != null
+        ? { message_thread_id: threadParams.message_thread_id }
+        : undefined;
+    try {
+      await resolvedDraftApi(chatId, draftId, "", clearThreadParams);
+    } catch {
+      // Best-effort cleanup; draft clear failure is cosmetic.
+    }
+  };
+
   const forceNewMessage = () => {
     // Boundary rotation may call stop() to finalize the previous draft.
     // Re-open the stream lifecycle for the next assistant segment.
     streamState.final = false;
     generation += 1;
     streamMessageId = undefined;
+    // Clear the previous draft preview before allocating a new one.
+    // This prevents stale drafts from reappearing after the final message is
+    // delivered (fixes #40750).
+    const previousDraftId = streamDraftId;
     if (previewTransport === "draft") {
       streamDraftId = allocateTelegramDraftId();
+    }
+    if (previousDraftId != null && previousDraftId !== streamDraftId) {
+      void clearDraftPreview(previousDraftId);
     }
     lastSentText = "";
     lastSentParseMode = undefined;
@@ -386,18 +411,8 @@ export function createTelegramDraftStream(params: {
         streamMessageId = Math.trunc(sentId);
         // Clear the draft so Telegram's input area doesn't briefly show a
         // stale copy alongside the newly materialized real message.
-        if (resolvedDraftApi != null && streamDraftId != null) {
-          const clearDraftId = streamDraftId;
-          const clearThreadParams =
-            usedThreadParams && threadParams?.message_thread_id != null
-              ? { message_thread_id: threadParams.message_thread_id }
-              : undefined;
-          try {
-            await resolvedDraftApi(chatId, clearDraftId, "", clearThreadParams);
-          } catch {
-            // Best-effort cleanup; draft clear failure is cosmetic.
-          }
-        }
+        // If thread params failed, clear without thread params to match.
+        await clearDraftPreview(streamDraftId, { skipThread: !usedThreadParams });
         return streamMessageId;
       }
     } catch (err) {
