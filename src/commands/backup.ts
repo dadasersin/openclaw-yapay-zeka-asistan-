@@ -22,6 +22,7 @@ export type BackupCreateOptions = {
   dryRun?: boolean;
   includeWorkspace?: boolean;
   onlyConfig?: boolean;
+  // Internal escape hatch for non-CLI callers. `openclaw backup create` always validates on success.
   verify?: boolean;
   json?: boolean;
   nowMs?: number;
@@ -233,7 +234,13 @@ function buildManifest(params: {
 }
 
 function formatTextSummary(result: BackupCreateResult): string[] {
-  const lines = [`Backup archive: ${result.archivePath}`];
+  const lines = [
+    result.dryRun
+      ? `Planned backup archive: ${result.archivePath}`
+      : result.verified
+        ? `Validated backup archive: ${result.archivePath}`
+        : `Backup archive created without validation: ${result.archivePath}`,
+  ];
   lines.push(`Included ${result.assets.length} path${result.assets.length === 1 ? "" : "s"}:`);
   for (const asset of result.assets) {
     lines.push(`- ${asset.kind}: ${asset.displayPath}`);
@@ -250,11 +257,8 @@ function formatTextSummary(result: BackupCreateResult): string[] {
   }
   if (result.dryRun) {
     lines.push("Dry run only; archive was not written.");
-  } else {
-    lines.push(`Created ${result.archivePath}`);
-    if (result.verified) {
-      lines.push("Archive verification: passed");
-    }
+  } else if (result.verified) {
+    lines.push("Archive verification: passed");
   }
   return lines;
 }
@@ -275,6 +279,7 @@ export async function backupCreateCommand(
   runtime: RuntimeEnv,
   opts: BackupCreateOptions = {},
 ): Promise<BackupCreateResult> {
+  const shouldVerify = !opts.dryRun && opts.verify !== false;
   const nowMs = opts.nowMs ?? Date.now();
   const archiveRoot = buildBackupArchiveRoot(nowMs);
   const onlyConfig = Boolean(opts.onlyConfig);
@@ -364,15 +369,23 @@ export async function backupCreateCommand(
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
 
-    if (opts.verify) {
-      await backupVerifyCommand(
-        {
-          ...runtime,
-          log: () => {},
-        },
-        { archive: outputPath, json: false },
-      );
-      result.verified = true;
+    if (shouldVerify) {
+      try {
+        await backupVerifyCommand(
+          {
+            ...runtime,
+            log: () => {},
+          },
+          { archive: outputPath, json: false },
+        );
+        result.verified = true;
+      } catch (err) {
+        await fs.rm(outputPath, { force: true }).catch(() => undefined);
+        throw new Error(
+          `Backup archive failed validation after writing and was removed: ${outputPath}`,
+          { cause: err },
+        );
+      }
     }
   }
 

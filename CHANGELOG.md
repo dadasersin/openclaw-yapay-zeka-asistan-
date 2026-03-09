@@ -6,6 +6,8 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- CLI/backup: make `openclaw backup create` produce validated archives by default, add `backup restore` with rollback-safe publication, and add `backup list` / `backup restore --choose` so users can restore the latest or a selected local backup version.
+
 ### Breaking
 
 ### Fixes
