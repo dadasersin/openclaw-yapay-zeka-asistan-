@@ -438,7 +438,7 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
 
   // ── Local run in a temp session file ──────────────────────────────────────
   const originalSessionFile = params.sessionFile;
-  const tempSessionFile = `${originalSessionFile}.adaptive-${Date.now()}-${process.pid}`;
+  const tempSessionFile = `${originalSessionFile}.adaptive-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 
   // Copy existing session (conversation history) to temp file before local run.
   await fs.copyFile(originalSessionFile, tempSessionFile).catch((err: NodeJS.ErrnoException) => {

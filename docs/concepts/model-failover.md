@@ -215,7 +215,7 @@ The default heuristic applies the following scoring (starting from 1.0, deductin
 | Pending (unresolved) tool calls | −0.4            |
 | Timeout / truncation            | −0.3            |
 
-Pass threshold: score ≥ `validation.minScore` (default 0.75) **and** no failure conditions.
+Pass threshold: score ≥ `validation.minScore` (default 0.75). Failure conditions (empty output, tool errors, etc.) reduce the score via the penalties above; individual failures do not independently block a pass.
 
 ### Relationship to the normal failover chain
 
