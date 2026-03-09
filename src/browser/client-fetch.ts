@@ -2,6 +2,7 @@ import { formatCliCommand } from "../cli/command-format.js";
 import { loadConfig } from "../config/config.js";
 import { isLoopbackHost } from "../gateway/net.js";
 import { getBridgeAuthForPort } from "./bridge-auth-registry.js";
+import { resolveBrowserConfig, resolveProfile } from "./config.js";
 import { resolveBrowserControlAuth } from "./control-auth.js";
 import {
   createBrowserControlContext,
@@ -102,7 +103,42 @@ const BROWSER_TOOL_MODEL_HINT =
   "Do NOT retry the browser tool — it will keep failing. " +
   "Use an alternative approach or inform the user that the browser is currently unavailable.";
 
-function resolveBrowserFetchOperatorHint(url: string): string {
+function looksLikeTimeoutError(message: string): boolean {
+  const msgLower = message.toLowerCase();
+  return (
+    msgLower.includes("timed out") ||
+    msgLower.includes("timeout") ||
+    msgLower.includes("aborted") ||
+    msgLower.includes("abort") ||
+    msgLower.includes("aborterror")
+  );
+}
+
+function isAttachOnlyDispatcherRequest(url: string): boolean {
+  if (isAbsoluteHttp(url)) {
+    return false;
+  }
+  try {
+    const cfg = loadConfig();
+    const resolved = resolveBrowserConfig(cfg?.browser, cfg);
+    const parsed = new URL(url, "http://localhost");
+    const profileName = parsed.searchParams.get("profile")?.trim() || resolved.defaultProfile;
+    const profile = resolveProfile(resolved, profileName);
+    return profile?.attachOnly ?? resolved.attachOnly;
+  } catch {
+    return false;
+  }
+}
+
+function resolveBrowserFetchOperatorHint(
+  url: string,
+  opts?: { attachOnly?: boolean; timeoutLike?: boolean },
+): string {
+  if (opts?.attachOnly) {
+    return opts.timeoutLike
+      ? "Browser CDP is not reachable for attachOnly profiles. Restarting the OpenClaw gateway will not help; ensure Chrome is running with a reachable --remote-debugging-port endpoint."
+      : "Browser CDP is not reachable for attachOnly profiles. Restarting the OpenClaw gateway will not help.";
+  }
   const isLocal = !isAbsoluteHttp(url);
   return isLocal
     ? `Restart the OpenClaw gateway (OpenClaw.app menubar, or \`${formatCliCommand("openclaw gateway")}\`).`
@@ -125,7 +161,11 @@ function appendBrowserToolModelHint(message: string): string {
 
 function enhanceDispatcherPathError(url: string, err: unknown): Error {
   const msg = normalizeErrorMessage(err);
-  const suffix = `${resolveBrowserFetchOperatorHint(url)} ${BROWSER_TOOL_MODEL_HINT}`;
+  const timeoutLike = looksLikeTimeoutError(msg);
+  const suffix = `${resolveBrowserFetchOperatorHint(url, {
+    attachOnly: isAttachOnlyDispatcherRequest(url),
+    timeoutLike,
+  })} ${BROWSER_TOOL_MODEL_HINT}`;
   const normalized = msg.endsWith(".") ? msg : `${msg}.`;
   return new Error(`${normalized} ${suffix}`, err instanceof Error ? { cause: err } : undefined);
 }
@@ -133,13 +173,7 @@ function enhanceDispatcherPathError(url: string, err: unknown): Error {
 function enhanceBrowserFetchError(url: string, err: unknown, timeoutMs: number): Error {
   const operatorHint = resolveBrowserFetchOperatorHint(url);
   const msg = String(err);
-  const msgLower = msg.toLowerCase();
-  const looksLikeTimeout =
-    msgLower.includes("timed out") ||
-    msgLower.includes("timeout") ||
-    msgLower.includes("aborted") ||
-    msgLower.includes("abort") ||
-    msgLower.includes("aborterror");
+  const looksLikeTimeout = looksLikeTimeoutError(msg);
   if (looksLikeTimeout) {
     return new Error(
       appendBrowserToolModelHint(
