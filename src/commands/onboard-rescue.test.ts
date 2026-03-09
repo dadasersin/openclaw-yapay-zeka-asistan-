@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRescueWatchdogConfig,
-  buildRescueWatchdogPrompt,
   canEnableRescueWatchdog,
   resolveMonitoredProfileName,
   resolveRescueGatewayPort,
@@ -53,13 +52,6 @@ describe("onboard rescue helpers", () => {
     );
   });
 
-  it("builds a rescue prompt that targets the monitored profile", () => {
-    const prompt = buildRescueWatchdogPrompt("default");
-    expect(prompt).toContain("openclaw --profile default gateway status --json");
-    expect(prompt).toContain("openclaw --profile default gateway restart");
-    expect(prompt).toContain("RESCUE_OK");
-  });
-
   it("builds rescue config from source core settings without copying main channels", () => {
     const config = buildRescueWatchdogConfig({
       sourceConfig: {
@@ -103,7 +95,8 @@ describe("onboard rescue helpers", () => {
           skills: [],
           tools: expect.objectContaining({
             profile: "minimal",
-            allow: ["exec"],
+            allow: [],
+            deny: ["*"],
           }),
         }),
       ]),

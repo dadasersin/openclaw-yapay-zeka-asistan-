@@ -266,7 +266,8 @@ describe("setupRescueWatchdog", () => {
         expect.objectContaining({
           id: "rescue-watchdog",
           tools: expect.objectContaining({
-            allow: ["exec"],
+            allow: [],
+            deny: ["*"],
           }),
         }),
       ]),
@@ -285,7 +286,8 @@ describe("setupRescueWatchdog", () => {
         params: expect.objectContaining({
           agentId: "rescue-watchdog",
           payload: expect.objectContaining({
-            allowUnsafeExternalContent: false,
+            kind: "rescueWatchdog",
+            monitoredProfile: "work",
           }),
         }),
       }),
