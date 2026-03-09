@@ -26,6 +26,7 @@ import {
   DEFAULT_RESCUE_TIMEOUT_SECONDS,
   RESCUE_WATCHDOG_AGENT_ID,
   buildRescueProfileEnv,
+  canEnableRescueWatchdog,
   resolveMonitoredProfileName,
 } from "../rescue/watchdog-shared.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
@@ -35,7 +36,7 @@ import { DEFAULT_GATEWAY_DAEMON_RUNTIME, type GatewayDaemonRuntime } from "./dae
 import { resolveGatewayInstallToken } from "./gateway-install-token.js";
 import { randomToken, waitForGatewayReachable } from "./onboard-helpers.js";
 
-export { resolveMonitoredProfileName } from "../rescue/watchdog-shared.js";
+export { canEnableRescueWatchdog, resolveMonitoredProfileName } from "../rescue/watchdog-shared.js";
 
 const RESCUE_JOB_NAME_PREFIX = "Rescue watchdog";
 const RESCUE_PROFILE_SUFFIX = "-rescue";
@@ -66,11 +67,6 @@ function assertValidMonitoredProfileName(raw?: string): string {
     );
   }
   return monitoredProfile;
-}
-
-export function canEnableRescueWatchdog(monitoredProfile: string): boolean {
-  const normalized = resolveMonitoredProfileName(monitoredProfile).toLowerCase();
-  return normalized !== "rescue" && !normalized.endsWith(RESCUE_PROFILE_SUFFIX);
 }
 
 export function resolveRescueProfileName(monitoredProfile: string): string {

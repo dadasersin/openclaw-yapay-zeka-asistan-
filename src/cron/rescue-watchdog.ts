@@ -5,7 +5,11 @@ import { resolveGatewayService } from "../daemon/service.js";
 import { resolveGatewayProbeAuthSafe } from "../gateway/probe-auth.js";
 import { probeGateway } from "../gateway/probe.js";
 import { runCommandWithTimeout } from "../process/exec.js";
-import { buildRescueProfileEnv, resolveMonitoredProfileName } from "../rescue/watchdog-shared.js";
+import {
+  buildRescueProfileEnv,
+  canEnableRescueWatchdog,
+  resolveMonitoredProfileName,
+} from "../rescue/watchdog-shared.js";
 import type { CronJob, CronRunOutcome, CronRunTelemetry } from "./types.js";
 
 const PROBE_TIMEOUT_MS = 1_500;
@@ -140,6 +144,12 @@ export async function runRescueWatchdogJob(params: {
     return {
       status: "error",
       error: `invalid monitored profile "${monitoredProfile}"`,
+    };
+  }
+  if (!canEnableRescueWatchdog(monitoredProfile)) {
+    return {
+      status: "error",
+      error: `invalid monitored profile "${monitoredProfile}": rescue watchdog cannot monitor rescue profiles`,
     };
   }
 

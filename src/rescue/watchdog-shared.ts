@@ -3,6 +3,7 @@ import { applyCliProfileEnv } from "../cli/profile.js";
 export const RESCUE_WATCHDOG_AGENT_ID = "rescue-watchdog";
 export const DEFAULT_RESCUE_INTERVAL_MS = 5 * 60_000;
 export const DEFAULT_RESCUE_TIMEOUT_SECONDS = 120;
+const RESCUE_PROFILE_SUFFIX = "-rescue";
 
 const RESCUE_ENV_ALLOWLIST = [
   "APPDATA",
@@ -16,6 +17,8 @@ const RESCUE_ENV_ALLOWLIST = [
   "LOCALAPPDATA",
   "NPM_CONFIG_PREFIX",
   "OPENCLAW_HOME",
+  "OPENCLAW_STATE_DIR",
+  "OPENCLAW_CONFIG_PATH",
   "PATH",
   "PATHEXT",
   "PNPM_HOME",
@@ -40,6 +43,11 @@ export function resolveMonitoredProfileName(raw = process.env.OPENCLAW_PROFILE):
     return "default";
   }
   return trimmed;
+}
+
+export function canEnableRescueWatchdog(monitoredProfile: string): boolean {
+  const normalized = resolveMonitoredProfileName(monitoredProfile).toLowerCase();
+  return normalized !== "rescue" && !normalized.endsWith(RESCUE_PROFILE_SUFFIX);
 }
 
 export function buildRescueProfileEnv(

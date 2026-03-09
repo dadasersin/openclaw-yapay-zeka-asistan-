@@ -97,6 +97,26 @@ describe("runRescueWatchdogJob", () => {
     expect(runCommandWithTimeout).not.toHaveBeenCalled();
   });
 
+  it("rejects rescue-shaped monitored profiles before service actions", async () => {
+    const result = await runRescueWatchdogJob({
+      job: {
+        id: "job-rescue-profile",
+        name: "rescue",
+        payload: {
+          kind: "rescueWatchdog",
+          monitoredProfile: "rescue",
+          timeoutSeconds: 120,
+        },
+      } as never,
+      monitoredProfile: "rescue",
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("cannot monitor rescue profiles");
+    expect(restartService).not.toHaveBeenCalled();
+    expect(runCommandWithTimeout).not.toHaveBeenCalled();
+  });
+
   it("restarts the managed service before escalating to doctor", async () => {
     probeGateway
       .mockResolvedValueOnce({
