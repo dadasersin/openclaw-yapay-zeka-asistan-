@@ -335,19 +335,42 @@ export async function spawnSubagentDirect(
   );
   const targetAgentId = requestedAgentId ? normalizeAgentId(requestedAgentId) : requesterAgentId;
   if (targetAgentId !== requesterAgentId) {
-    const allowAgents = resolveAgentConfig(cfg, requesterAgentId)?.subagents?.allowAgents ?? [];
+    const requesterConfig = resolveAgentConfig(cfg, requesterAgentId);
+    const allowAgentsRaw = requesterConfig?.subagents?.allowAgents;
+    const allowAgents = allowAgentsRaw ?? [];
     const allowAny = allowAgents.some((value) => value.trim() === "*");
     const normalizedTargetId = targetAgentId.toLowerCase();
+    // When allowAgents is not configured (undefined), allow all configured agents
+    // so they are discoverable out-of-the-box — but only when the requester
+    // agent itself has a config entry.  Unknown/unconfigured requesters must
+    // not receive implicit allow.
+    const configuredIds = Array.isArray(cfg.agents?.list)
+      ? cfg.agents.list.map((entry) => normalizeAgentId(entry.id).toLowerCase())
+      : [];
+    const implicitAllow =
+      allowAgentsRaw === undefined &&
+      requesterConfig !== undefined &&
+      configuredIds.includes(normalizedTargetId);
     const allowSet = new Set(
       allowAgents
         .filter((value) => value.trim() && value.trim() !== "*")
         .map((value) => normalizeAgentId(value).toLowerCase()),
     );
-    if (!allowAny && !allowSet.has(normalizedTargetId)) {
-      const allowedText = allowSet.size > 0 ? Array.from(allowSet).join(", ") : "none";
+    if (!allowAny && !implicitAllow && !allowSet.has(normalizedTargetId)) {
+      const effectiveAllowed =
+        allowAgentsRaw === undefined
+          ? configuredIds
+          : allowSet.size > 0
+            ? Array.from(allowSet)
+            : [];
+      const allowedText = effectiveAllowed.length > 0 ? effectiveAllowed.join(", ") : "none";
+      const hint =
+        allowAgentsRaw === undefined
+          ? ` (no allowAgents configured — only configured agents are allowed: ${allowedText})`
+          : ` (allowed: ${allowedText})`;
       return {
         status: "forbidden",
-        error: `agentId is not allowed for sessions_spawn (allowed: ${allowedText})`,
+        error: `Agent "${targetAgentId}" is not allowed for sessions_spawn${hint}`,
       };
     }
   }

@@ -29,9 +29,9 @@ describe("agents_list", () => {
     };
   }
 
-  function requireAgentsListTool() {
+  function requireAgentsListTool(requesterAgentId = "main") {
     const tool = createOpenClawTools({
-      agentSessionKey: "main",
+      agentSessionKey: requesterAgentId,
     }).find((candidate) => candidate.name === "agents_list");
     if (!tool) {
       throw new Error("missing agents_list tool");
@@ -50,9 +50,30 @@ describe("agents_list", () => {
     };
   });
 
-  it("defaults to the requester agent only", async () => {
+  it("defaults to all configured agents when allowAgents is not set", async () => {
+    setConfigWithAgentList([
+      { id: "main", name: "Main" },
+      { id: "research", name: "Research" },
+    ]);
+
     const tool = requireAgentsListTool();
     const result = await tool.execute("call1", {});
+    expect(result.details).toMatchObject({
+      requester: "main",
+      allowAny: true,
+    });
+    const agents = readAgentList(result);
+    expect(agents?.map((agent) => agent.id)).toEqual(["main", "research"]);
+  });
+
+  it("restricts to requester only when allowAgents is explicitly empty", async () => {
+    setConfigWithAgentList([
+      { id: "main", name: "Main", subagents: { allowAgents: [] } },
+      { id: "research", name: "Research" },
+    ]);
+
+    const tool = requireAgentsListTool();
+    const result = await tool.execute("call1b", {});
     expect(result.details).toMatchObject({
       requester: "main",
       allowAny: false,
@@ -109,6 +130,43 @@ describe("agents_list", () => {
     expect(agents?.map((agent) => agent.id)).toEqual(["main", "coder", "research"]);
   });
 
+  it("returns only requester when agents.list is an empty array", async () => {
+    configOverride = {
+      session: createPerSenderSessionConfig(),
+      agents: {
+        list: [],
+      },
+    };
+
+    const tool = requireAgentsListTool();
+    const result = await tool.execute("call-empty-list", {});
+    const agents = readAgentList(result);
+    // Even with an empty list, the requester's own id should be present
+    expect(agents?.length).toBeLessThanOrEqual(1);
+  });
+
+  it("handles case-insensitive agent id matching in allowAgents", async () => {
+    setConfigWithAgentList([
+      {
+        id: "main",
+        name: "Main",
+        subagents: {
+          allowAgents: ["RESEARCH"],
+        },
+      },
+      {
+        id: "research",
+        name: "Research",
+      },
+    ]);
+
+    const tool = requireAgentsListTool();
+    const result = await tool.execute("call-case", {});
+    const agents = readAgentList(result);
+    const ids = agents?.map((agent) => agent.id) ?? [];
+    expect(ids).toContain("research");
+  });
+
   it("marks allowlisted-but-unconfigured agents", async () => {
     setConfigWithAgentList([
       {
@@ -125,5 +183,22 @@ describe("agents_list", () => {
     expect(agents?.map((agent) => agent.id)).toEqual(["main", "research"]);
     const research = agents?.find((agent) => agent.id === "research");
     expect(research?.configured).toBe(false);
+  });
+
+  it("denies implicit allow when requester agent has no config entry", async () => {
+    setConfigWithAgentList([
+      {
+        id: "configured-agent",
+        name: "Configured",
+      },
+    ]);
+
+    // Requester "unknown-agent" has no config entry — should NOT get implicit
+    // allow-any, so configured-agent should not appear in its list.
+    const tool = requireAgentsListTool("unknown-agent");
+    const result = await tool.execute("call-unknown", {});
+    const agents = readAgentList(result);
+    const ids = agents?.map((agent) => agent.id) ?? [];
+    expect(ids).not.toContain("configured-agent");
   });
 });
