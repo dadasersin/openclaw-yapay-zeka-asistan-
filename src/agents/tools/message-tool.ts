@@ -597,6 +597,13 @@ function resolveTargetChannelHint(value: unknown): string | undefined {
   return normalizeMessageChannel(trimmed.slice(0, separatorIndex));
 }
 
+function resolveTargetsChannelHint(value: unknown): string | undefined {
+  if (!Array.isArray(value) || typeof value[0] !== "string") {
+    return undefined;
+  }
+  return resolveTargetChannelHint(value[0]);
+}
+
 function resolveMessageToolChannelHint(params: {
   args: Record<string, unknown>;
   currentChannelProvider?: string;
@@ -605,7 +612,8 @@ function resolveMessageToolChannelHint(params: {
     normalizeMessageChannel(readStringParam(params.args, "channel")) ??
     normalizeMessageChannel(params.currentChannelProvider) ??
     resolveTargetChannelHint(params.args.target) ??
-    resolveTargetChannelHint(params.args.to)
+    resolveTargetChannelHint(params.args.to) ??
+    resolveTargetsChannelHint(params.args.targets)
   );
 }
 

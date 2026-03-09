@@ -326,6 +326,44 @@ describe("message tool runtime config fallback", () => {
     expect(call?.cfg?.channels?.telegram).toEqual(capturedCfg.channels?.telegram);
   });
 
+  it("uses targets[] to infer the fallback channel when the runtime snapshot lacks that channel", async () => {
+    mocks.runMessageAction.mockClear();
+    mocks.runMessageAction.mockResolvedValue({
+      kind: "broadcast",
+      action: "broadcast",
+      channel: "telegram",
+      handledBy: "core",
+      payload: { results: [] },
+      dryRun: true,
+    } satisfies MessageActionRunResult);
+
+    const runtimeCfg: OpenClawConfig = {
+      channels: {
+        discord: {
+          token: "discord-token",
+        },
+      },
+    };
+    const capturedCfg: OpenClawConfig = {
+      channels: {
+        telegram: {
+          botToken: "captured-telegram-token",
+        },
+      },
+    };
+    vi.spyOn(configModule, "getRuntimeConfigSnapshot").mockReturnValue(runtimeCfg);
+
+    const tool = createMessageTool({ config: capturedCfg });
+    await tool.execute("1", {
+      action: "broadcast",
+      targets: ["telegram:chat_id:123"],
+      message: "hi",
+    });
+
+    const call = mocks.runMessageAction.mock.calls[0]?.[0] as { cfg?: OpenClawConfig } | undefined;
+    expect(call?.cfg?.channels?.telegram).toEqual(capturedCfg.channels?.telegram);
+  });
+
   it("clones the runtime snapshot before dispatching send", async () => {
     const runtimeCfg: OpenClawConfig = {
       channels: {
