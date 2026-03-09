@@ -2,6 +2,7 @@ import { formatCliCommand } from "../../cli/command-format.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { resolveGatewayPort, writeConfigFile } from "../../config/config.js";
 import { logConfigUpdated } from "../../config/logging.js";
+import { isSystemdUserServiceAvailable } from "../../daemon/systemd.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import { DEFAULT_GATEWAY_DAEMON_RUNTIME } from "../daemon-runtime.js";
 import { applyOnboardingLocalWorkspaceConfig } from "../onboard-config.js";
@@ -12,13 +13,50 @@ import {
   resolveControlUiLinks,
   waitForGatewayReachable,
 } from "../onboard-helpers.js";
-import { setupRescueWatchdog } from "../onboard-rescue.js";
+import {
+  canEnableRescueWatchdog,
+  resolveMonitoredProfileName,
+  setupRescueWatchdog,
+} from "../onboard-rescue.js";
 import type { OnboardOptions } from "../onboard-types.js";
 import { inferAuthChoiceFromFlags } from "./local/auth-choice-inference.js";
 import { applyNonInteractiveGatewayConfig } from "./local/gateway-config.js";
 import { logNonInteractiveOnboardingJson } from "./local/output.js";
 import { applyNonInteractiveSkillsConfig } from "./local/skills-config.js";
 import { resolveNonInteractiveWorkspaceDir } from "./local/workspace.js";
+
+export function resolveNonInteractiveRescueWatchdogPlan(params: {
+  opts: Pick<OnboardOptions, "installDaemon" | "rescueWatchdog">;
+  monitoredProfile: string;
+  platform: NodeJS.Platform;
+  systemdAvailable: boolean;
+}) {
+  const rescueRequested = params.opts.rescueWatchdog === true;
+  const rescueSupported =
+    rescueRequested &&
+    canEnableRescueWatchdog(resolveMonitoredProfileName(params.monitoredProfile));
+  const rescueAvailable =
+    rescueSupported && (params.platform !== "linux" || params.systemdAvailable);
+  const messages: string[] = [];
+
+  if (rescueRequested && !rescueSupported) {
+    messages.push(
+      `Rescue watchdog is not supported while onboarding the "${resolveMonitoredProfileName(params.monitoredProfile)}" profile; skipping rescue watchdog setup.`,
+    );
+  } else if (rescueRequested && !rescueAvailable) {
+    messages.push(
+      "Rescue watchdog requires systemd user services on Linux, but they are unavailable here; skipping rescue watchdog setup.",
+    );
+  } else if (rescueAvailable && params.opts.installDaemon !== true) {
+    messages.push("Rescue watchdog requested; enabling managed Gateway service install.");
+  }
+
+  return {
+    installDaemon: Boolean(params.opts.installDaemon || rescueAvailable),
+    rescueWatchdogEnabled: rescueAvailable,
+    messages,
+  };
+}
 
 export async function runNonInteractiveOnboardingLocal(params: {
   opts: OnboardOptions;
@@ -76,10 +114,18 @@ export async function runNonInteractiveOnboardingLocal(params: {
   }
   nextConfig = gatewayResult.nextConfig;
 
-  const installDaemon = opts.installDaemon || opts.rescueWatchdog === true;
-  if (opts.rescueWatchdog === true && opts.installDaemon !== true) {
-    runtime.log("Rescue watchdog requested; enabling managed Gateway service install.");
+  const systemdAvailable =
+    process.platform === "linux" ? await isSystemdUserServiceAvailable() : true;
+  const rescuePlan = resolveNonInteractiveRescueWatchdogPlan({
+    opts,
+    monitoredProfile: process.env.OPENCLAW_PROFILE ?? "default",
+    platform: process.platform,
+    systemdAvailable,
+  });
+  for (const message of rescuePlan.messages) {
+    runtime.log(message);
   }
+  const installDaemon = rescuePlan.installDaemon;
 
   nextConfig = applyNonInteractiveSkillsConfig({ nextConfig, opts, runtime });
 
@@ -102,26 +148,23 @@ export async function runNonInteractiveOnboardingLocal(params: {
   }
 
   const daemonRuntimeRaw = opts.daemonRuntime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME;
-  const rescueWatchdog =
-    opts.rescueWatchdog === true
-      ? await setupRescueWatchdog({
-          sourceConfig: nextConfig,
-          workspaceDir,
-          mainPort: gatewayResult.port,
-          monitoredProfile: process.env.OPENCLAW_PROFILE,
-          runtime: daemonRuntimeRaw,
-          output: {
-            log: runtime.log,
-          },
-        }).catch((error) => {
-          runtime.error(
-            error instanceof Error
-              ? `Rescue watchdog setup failed: ${error.message}`
-              : String(error),
-          );
-          return undefined;
-        })
-      : undefined;
+  const rescueWatchdog = rescuePlan.rescueWatchdogEnabled
+    ? await setupRescueWatchdog({
+        sourceConfig: nextConfig,
+        workspaceDir,
+        mainPort: gatewayResult.port,
+        monitoredProfile: process.env.OPENCLAW_PROFILE,
+        runtime: daemonRuntimeRaw,
+        output: {
+          log: runtime.log,
+        },
+      }).catch((error) => {
+        runtime.error(
+          error instanceof Error ? `Rescue watchdog setup failed: ${error.message}` : String(error),
+        );
+        return undefined;
+      })
+    : undefined;
   if (!opts.skipHealth) {
     const { healthCommand } = await import("../health.js");
     const links = resolveControlUiLinks({

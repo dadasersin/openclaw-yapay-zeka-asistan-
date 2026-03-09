@@ -96,6 +96,39 @@ function resolveRescueToolProfile(sourceProfile: unknown, existingProfile: unkno
   return "coding";
 }
 
+function normalizeServiceEnvironment(environment?: Record<string, string | undefined>) {
+  return Object.entries(environment ?? {})
+    .filter(([, value]) => value !== undefined)
+    .toSorted(([left], [right]) => left.localeCompare(right));
+}
+
+function serviceCommandMatchesPlan(params: {
+  current: {
+    programArguments: string[];
+    workingDirectory?: string;
+    environment?: Record<string, string>;
+  } | null;
+  expected: {
+    programArguments: string[];
+    workingDirectory?: string;
+    environment?: Record<string, string | undefined>;
+  };
+}) {
+  if (!params.current) {
+    return false;
+  }
+  const expectedEnvironment = Object.fromEntries(
+    Object.entries(params.expected.environment ?? {}).filter(([, value]) => value !== undefined),
+  );
+  return (
+    JSON.stringify(params.current.programArguments) ===
+      JSON.stringify(params.expected.programArguments) &&
+    (params.current.workingDirectory ?? "") === (params.expected.workingDirectory ?? "") &&
+    JSON.stringify(normalizeServiceEnvironment(params.current.environment)) ===
+      JSON.stringify(normalizeServiceEnvironment(expectedEnvironment))
+  );
+}
+
 export function buildRescueWatchdogPrompt(monitoredProfile: string): string {
   const profileFlag = `--profile ${resolveMonitoredProfileName(monitoredProfile)}`;
   const statusCommand = `openclaw ${profileFlag} gateway status --json`;
@@ -337,23 +370,24 @@ export async function setupRescueWatchdog(params: {
     throw new Error(tokenResolution.unavailableReason);
   }
 
+  const expectedInstallPlan = await buildGatewayInstallPlan({
+    env: rescueEnv,
+    port: rescuePort,
+    runtime: params.runtime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME,
+    warn: (message) => params.output.log(message),
+    config: rescueConfig,
+  });
+
   const service = resolveGatewayService();
   const loaded = await service.isLoaded({ env: rescueEnv });
   if (!loaded) {
-    const { programArguments, workingDirectory, environment } = await buildGatewayInstallPlan({
-      env: rescueEnv,
-      port: rescuePort,
-      runtime: params.runtime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME,
-      warn: (message) => params.output.log(message),
-      config: rescueConfig,
-    });
     try {
       await service.install({
         env: rescueEnv,
         stdout: process.stdout,
-        programArguments,
-        workingDirectory,
-        environment,
+        programArguments: expectedInstallPlan.programArguments,
+        workingDirectory: expectedInstallPlan.workingDirectory,
+        environment: expectedInstallPlan.environment,
       });
     } catch (error) {
       throw new Error(
@@ -362,10 +396,32 @@ export async function setupRescueWatchdog(params: {
       );
     }
   } else {
-    await service.restart({
-      env: rescueEnv,
-      stdout: process.stdout,
+    const currentCommand = await service.readCommand(rescueEnv).catch(() => null);
+    const needsReinstall = !serviceCommandMatchesPlan({
+      current: currentCommand,
+      expected: expectedInstallPlan,
     });
+    if (needsReinstall) {
+      try {
+        await service.install({
+          env: rescueEnv,
+          stdout: process.stdout,
+          programArguments: expectedInstallPlan.programArguments,
+          workingDirectory: expectedInstallPlan.workingDirectory,
+          environment: expectedInstallPlan.environment,
+        });
+      } catch (error) {
+        throw new Error(
+          `Rescue gateway update failed: ${error instanceof Error ? error.message : String(error)}\n${gatewayInstallErrorHint()}`,
+          { cause: error },
+        );
+      }
+    } else {
+      await service.restart({
+        env: rescueEnv,
+        stdout: process.stdout,
+      });
+    }
   }
 
   await waitForGatewayReachable({

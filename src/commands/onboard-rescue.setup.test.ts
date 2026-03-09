@@ -31,6 +31,17 @@ const callGateway = vi.hoisted(() =>
 );
 const gatewayInstall = vi.hoisted(() => vi.fn(async () => {}));
 const gatewayRestart = vi.hoisted(() => vi.fn(async () => {}));
+const gatewayIsLoaded = vi.hoisted(() => vi.fn(async () => false));
+const gatewayReadCommand = vi.hoisted(() =>
+  vi.fn<
+    () => Promise<{
+      programArguments: string[];
+      workingDirectory?: string;
+      environment?: Record<string, string>;
+    } | null>
+  >(async () => null),
+);
+const gatewayReadRuntime = vi.hoisted(() => vi.fn(async () => "node"));
 
 vi.mock("../agents/workspace.js", () => ({
   ensureAgentWorkspace: vi.fn(async ({ dir }: { dir: string }) => ({ dir })),
@@ -56,9 +67,11 @@ vi.mock("../gateway/call.js", () => ({
 
 vi.mock("../daemon/service.js", () => ({
   resolveGatewayService: vi.fn(() => ({
-    isLoaded: vi.fn(async () => false),
+    isLoaded: gatewayIsLoaded,
     install: gatewayInstall,
     restart: gatewayRestart,
+    readCommand: gatewayReadCommand,
+    readRuntime: gatewayReadRuntime,
   })),
 }));
 
@@ -85,6 +98,12 @@ describe("setupRescueWatchdog", () => {
     callGateway.mockClear();
     gatewayInstall.mockClear();
     gatewayRestart.mockClear();
+    gatewayIsLoaded.mockReset();
+    gatewayReadCommand.mockReset();
+    gatewayReadRuntime.mockReset();
+    gatewayIsLoaded.mockResolvedValue(false);
+    gatewayReadCommand.mockResolvedValue(null);
+    gatewayReadRuntime.mockResolvedValue("node");
   });
 
   afterEach(async () => {
@@ -190,5 +209,34 @@ describe("setupRescueWatchdog", () => {
     };
     expect(rescueStore.profiles).toHaveProperty("main-key");
     expect(rescueStore.profiles).toHaveProperty("rescue-only");
+  });
+
+  it("reinstalls the rescue service when the installed command drifts", async () => {
+    process.env.HOME = tempHome;
+    process.env.OPENCLAW_TEST_FAST = "1";
+    process.env.OPENCLAW_PROFILE = "work";
+
+    gatewayIsLoaded.mockResolvedValue(true);
+    gatewayReadCommand.mockResolvedValue({
+      programArguments: ["openclaw", "gateway", "run", "--port", "18789"],
+      workingDirectory: "/tmp/old",
+      environment: {},
+    });
+
+    await setupRescueWatchdog({
+      sourceConfig: {
+        tools: { profile: "coding" },
+      },
+      workspaceDir: path.join(tempHome, "workspace-work"),
+      mainPort: 18_789,
+      monitoredProfile: "work",
+      runtime: "node",
+      output: {
+        log: vi.fn(),
+      },
+    });
+
+    expect(gatewayInstall).toHaveBeenCalledTimes(1);
+    expect(gatewayRestart).not.toHaveBeenCalled();
   });
 });
