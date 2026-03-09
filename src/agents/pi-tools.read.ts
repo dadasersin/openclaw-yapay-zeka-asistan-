@@ -6,6 +6,7 @@ import { createEditTool, createReadTool, createWriteTool } from "@mariozechner/p
 import {
   SafeOpenError,
   openFileWithinRoot,
+  openWritableFileWithinRoot,
   readFileWithinRoot,
   writeFileWithinRoot,
 } from "../infra/fs-safe.js";
@@ -455,7 +456,36 @@ export function createSandboxedWriteTool(params: SandboxToolParams) {
   const base = createWriteTool(params.root, {
     operations: createSandboxWriteOperations(params),
   }) as unknown as AnyAgentTool;
-  return wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write);
+  // Sandbox write tool does not support append mode (sandbox bridge has no appendFile).
+  // Explicitly reject append=true so the model gets a clear error instead of silently
+  // overwriting — which is the exact data-loss scenario append is meant to prevent.
+  const normalized = wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write);
+  return {
+    ...normalized,
+    execute: async (
+      toolCallId: string,
+      params: unknown,
+      signal: AbortSignal,
+      onUpdate?: unknown,
+    ) => {
+      const record =
+        params && typeof params === "object" ? (params as Record<string, unknown>) : undefined;
+      if (record?.append === true) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                "Error: append mode is not supported in sandboxed sessions. " +
+                "The sandbox bridge does not expose appendFile. " +
+                "Use the default overwrite mode or run outside the sandbox.",
+            },
+          ],
+        } as AgentToolResult;
+      }
+      return normalized.execute(toolCallId, params, signal, onUpdate);
+    },
+  };
 }
 
 export function createSandboxedEditTool(params: SandboxToolParams) {
@@ -469,7 +499,11 @@ export function createHostWorkspaceWriteTool(root: string, options?: { workspace
   const base = createWriteTool(root, {
     operations: createHostWriteOperations(root, options),
   }) as unknown as AnyAgentTool;
-  return wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write);
+  return wrapWriteToolWithAppendMode(
+    wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write),
+    root,
+    options,
+  );
 }
 
 export function createHostWorkspaceEditTool(root: string, options?: { workspaceOnly?: boolean }) {
@@ -670,4 +704,104 @@ function createFsAccessError(code: string, filePath: string): NodeJS.ErrnoExcept
   const error = new Error(`Sandbox FS error (${code}): ${filePath}`) as NodeJS.ErrnoException;
   error.code = code;
   return error;
+}
+
+// ---------------------------------------------------------------------------
+// Append mode extension for the Write tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrap a write tool to support an optional `append` boolean parameter.
+ *
+ * When `append` is true the content is appended to the file instead of
+ * overwriting it.  This prevents silent data loss when multiple isolated
+ * sessions (e.g. cron jobs) write to the same file concurrently.
+ *
+ * The upstream `createWriteTool` from `@mariozechner/pi-coding-agent` does
+ * not support append — this wrapper intercepts the parameter at the OpenClaw
+ * layer and performs the append via `fs.appendFile` before delegating other
+ * writes to the original tool.
+ *
+ * @see https://github.com/openclaw/openclaw/issues/40001
+ */
+function wrapWriteToolWithAppendMode(
+  tool: AnyAgentTool,
+  root: string,
+  _options?: { workspaceOnly?: boolean },
+): AnyAgentTool {
+  // Extend the parameters schema to advertise the `append` parameter.
+  const baseParams = (tool.parameters ?? tool.schema) as Record<string, unknown> | undefined;
+  const extendedParams = baseParams?.properties
+    ? {
+        ...baseParams,
+        properties: {
+          ...(baseParams.properties as Record<string, unknown>),
+          append: {
+            type: "boolean" as const,
+            description:
+              "If true, append content to the file instead of overwriting. " +
+              "Useful when multiple sessions write to the same file.",
+          },
+        },
+      }
+    : baseParams;
+
+  return {
+    ...tool,
+    description:
+      (tool.description ?? "") +
+      " Set append=true to append content instead of overwriting the file.",
+    parameters: extendedParams,
+    schema: extendedParams,
+    execute: async (toolCallId, params, signal, onUpdate) => {
+      // Normalize params so structured content and file_path aliases are handled
+      // consistently with the non-append path (which already goes through
+      // wrapToolParamNormalization).
+      const normalized = normalizeToolParams(params);
+      const shouldAppend = normalized?.append === true;
+
+      if (!shouldAppend) {
+        // Normal write — delegate to the original tool.
+        return tool.execute(toolCallId, params, signal, onUpdate);
+      }
+
+      // Append mode — handle directly.
+      const filePath = normalized?.path as string | undefined;
+      const content = normalized?.content as string | undefined;
+
+      if (!filePath) {
+        return { content: [{ type: "text", text: "Error: path is required" }] };
+      }
+      if (content === undefined || content === null) {
+        return { content: [{ type: "text", text: "Error: content is required" }] };
+      }
+
+      try {
+        // Use the same path-safety validation as writeFileWithinRoot to prevent
+        // symlink escapes and path traversal attacks.  openWritableFileWithinRoot
+        // resolves symlinks, checks the real path is inside the workspace root,
+        // and creates parent directories.
+        const relative = toRelativeWorkspacePath(root, filePath);
+        const target = await openWritableFileWithinRoot({
+          rootDir: root,
+          relativePath: relative,
+          mkdir: true,
+          truncateExisting: false,
+        });
+        const resolvedPath = target.openedRealPath;
+        await target.handle.close().catch(() => {});
+
+        await fs.appendFile(resolvedPath, content, { encoding: "utf-8", signal });
+
+        return {
+          content: [{ type: "text", text: `Successfully appended to ${filePath}` }],
+        } as AgentToolResult;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text", text: `Error appending to file: ${message}` }],
+        } as AgentToolResult;
+      }
+    },
+  };
 }
