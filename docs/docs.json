@@ -876,10 +876,7 @@
                   "install/hetzner",
                   "install/gcp",
                   "install/macos-vm",
-                  "install/exe-dev",
-                  "install/railway",
-                  "install/render",
-                  "install/northflank"
+                  "install/exe-dev"
                 ]
               },
               {
@@ -1476,10 +1473,7 @@
                   "zh-CN/install/hetzner",
                   "zh-CN/install/gcp",
                   "zh-CN/install/macos-vm",
-                  "zh-CN/install/exe-dev",
-                  "zh-CN/install/railway",
-                  "zh-CN/install/render",
-                  "zh-CN/install/northflank"
+                  "zh-CN/install/exe-dev"
                 ]
               },
               {
