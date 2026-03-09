@@ -180,9 +180,11 @@ export function createAcpDispatchDeliveryCoordinator(params: {
     if (kind === "tool") {
       return params.dispatcher.sendToolResult(ttsPayload);
     }
-    if (kind === "block") {
-      return params.dispatcher.sendBlockReply(ttsPayload);
-    }
+    // Promote ACP blocks to finals for same-channel delivery. Channel
+    // dispatchers (e.g. Feishu) set disableBlockStreaming and suppress
+    // block payloads from the normal inference pipeline. ACP dispatch
+    // bypasses that pipeline, so blocks must be sent as finals to reach
+    // the user.
     return params.dispatcher.sendFinalReply(ttsPayload);
   };
 
