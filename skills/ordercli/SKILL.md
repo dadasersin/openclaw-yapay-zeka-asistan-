@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "🛵",
         "requires": { "bins": ["ordercli"] },
         "install":
@@ -13,6 +14,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "steipete/tap/ordercli",
               "bins": ["ordercli"],
               "label": "Install ordercli (brew)",

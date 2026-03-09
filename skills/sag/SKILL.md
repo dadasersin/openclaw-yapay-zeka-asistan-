@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "🗣️",
         "requires": { "bins": ["sag"], "env": ["ELEVENLABS_API_KEY"] },
         "primaryEnv": "ELEVENLABS_API_KEY",
@@ -14,6 +15,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "steipete/tap/sag",
               "bins": ["sag"],
               "label": "Install sag (brew)",

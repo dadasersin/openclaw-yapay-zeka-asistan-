@@ -5,6 +5,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "🐙",
         "requires": { "bins": ["gh"] },
         "install":
@@ -12,6 +13,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "gh",
               "bins": ["gh"],
               "label": "Install GitHub CLI (brew)",

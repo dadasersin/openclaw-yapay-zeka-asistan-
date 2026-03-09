@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "🍌",
         "requires": { "bins": ["uv"], "env": ["GEMINI_API_KEY"] },
         "primaryEnv": "GEMINI_API_KEY",
@@ -14,6 +15,7 @@ metadata:
             {
               "id": "uv-brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "uv",
               "bins": ["uv"],
               "label": "Install uv (brew)",

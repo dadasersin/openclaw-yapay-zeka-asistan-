@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "📱",
         "requires": { "bins": ["wacli"] },
         "install":
@@ -13,6 +14,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "steipete/tap/wacli",
               "bins": ["wacli"],
               "label": "Install wacli (brew)",

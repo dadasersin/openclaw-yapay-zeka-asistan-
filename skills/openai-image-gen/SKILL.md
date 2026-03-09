@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "🖼️",
         "requires": { "bins": ["python3"], "env": ["OPENAI_API_KEY"] },
         "primaryEnv": "OPENAI_API_KEY",
@@ -14,6 +15,7 @@ metadata:
             {
               "id": "python-brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "python",
               "bins": ["python3"],
               "label": "Install Python (brew)",

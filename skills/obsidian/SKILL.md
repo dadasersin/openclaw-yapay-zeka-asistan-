@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "💎",
         "requires": { "bins": ["obsidian-cli"] },
         "install":
@@ -13,6 +14,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "yakitrak/yakitrak/obsidian-cli",
               "bins": ["obsidian-cli"],
               "label": "Install obsidian-cli (brew)",

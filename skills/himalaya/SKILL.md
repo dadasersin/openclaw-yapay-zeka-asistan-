@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "📧",
         "requires": { "bins": ["himalaya"] },
         "install":
@@ -13,6 +14,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "himalaya",
               "bins": ["himalaya"],
               "label": "Install Himalaya (brew)",

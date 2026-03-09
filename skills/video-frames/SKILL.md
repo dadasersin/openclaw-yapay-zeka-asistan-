@@ -6,6 +6,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "🎞️",
         "requires": { "bins": ["ffmpeg"] },
         "install":
@@ -13,6 +14,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "ffmpeg",
               "bins": ["ffmpeg"],
               "label": "Install ffmpeg (brew)",

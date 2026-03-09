@@ -5,6 +5,7 @@ metadata:
   {
     "openclaw":
       {
+        "os": ["darwin", "linux"],
         "emoji": "𝕏",
         "requires": { "bins": ["xurl"] },
         "install":
@@ -12,6 +13,7 @@ metadata:
             {
               "id": "brew",
               "kind": "brew",
+              "os": ["darwin", "linux"],
               "formula": "xdevplatform/tap/xurl",
               "bins": ["xurl"],
               "label": "Install xurl (brew)",
