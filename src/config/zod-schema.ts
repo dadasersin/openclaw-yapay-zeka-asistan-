@@ -423,6 +423,7 @@ export const OpenClawSchema = z
         dispatch: z
           .object({
             enabled: z.boolean().optional(),
+            nonThreadedCompletionToParent: z.boolean().optional(),
           })
           .strict()
           .optional(),
