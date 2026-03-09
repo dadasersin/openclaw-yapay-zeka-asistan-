@@ -787,6 +787,12 @@ export const ToolsSchema = z
           })
           .strict()
           .optional(),
+        fallbackChannel: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
