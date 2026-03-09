@@ -265,8 +265,12 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
               }
             }
             // When streaming is active, the block is consumed via streaming card
-            // update below. Otherwise, fall through to the normal text sending
-            // path so ACP dispatch replies reach the user as plain messages.
+            // update below. Otherwise suppress: block payloads from the normal
+            // inference pipeline are disabled via disableBlockStreaming and should
+            // not leak as plain messages.
+            if (!streaming?.isActive()) {
+              return;
+            }
           }
 
           if (info?.kind === "final" && streamingEnabled && useCard) {

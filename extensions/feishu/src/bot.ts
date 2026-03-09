@@ -1211,10 +1211,12 @@ export async function handleFeishuMessage(params: {
     const bindingManager = getFeishuThreadBindingManager(account.accountId);
     if (bindingManager) {
       // Build conversation ID matching the format used by /focus:
-      // DMs: senderOpenId, group topics: chatId:topic:threadId
+      // DMs: senderOpenId, group topics: chatId:topic:rootId
+      // Prefer root_id over thread_id — root_id is the stable canonical
+      // identifier for Feishu topic threads.
       const bindingConversationId = isGroup
-        ? ctx.threadId || ctx.rootId
-          ? `${ctx.chatId}:topic:${ctx.threadId || ctx.rootId}`
+        ? ctx.rootId || ctx.threadId
+          ? `${ctx.chatId}:topic:${ctx.rootId || ctx.threadId}`
           : undefined
         : ctx.senderOpenId;
 
@@ -1347,7 +1349,7 @@ export async function handleFeishuMessage(params: {
         InboundHistory: inboundHistory,
         ReplyToId: ctx.parentId,
         RootMessageId: ctx.rootId,
-        MessageThreadId: isGroup ? ctx.threadId || ctx.rootId : undefined,
+        MessageThreadId: isGroup ? ctx.rootId || ctx.threadId : undefined,
         RawBody: ctx.content,
         CommandBody: ctx.content,
         From: feishuFrom,
