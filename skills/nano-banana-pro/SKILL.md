@@ -6,7 +6,6 @@ metadata:
   {
     "openclaw":
       {
-        "os": ["darwin", "linux"],
         "emoji": "🍌",
         "requires": { "bins": ["uv"], "env": ["GEMINI_API_KEY"] },
         "primaryEnv": "GEMINI_API_KEY",

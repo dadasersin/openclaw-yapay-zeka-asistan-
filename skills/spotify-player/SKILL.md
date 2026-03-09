@@ -6,7 +6,6 @@ metadata:
   {
     "openclaw":
       {
-        "os": ["darwin", "linux"],
         "emoji": "🎵",
         "requires": { "anyBins": ["spogo", "spotify_player"] },
         "install":

@@ -5,7 +5,6 @@ metadata:
   {
     "openclaw":
       {
-        "os": ["darwin", "linux"],
         "emoji": "🐙",
         "requires": { "bins": ["gh"] },
         "install":
