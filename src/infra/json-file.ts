@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { writeFileSyncRetry } from "./fs-retry.js";
 
 export function loadJsonFile(pathname: string): unknown {
   try {
@@ -18,6 +19,6 @@ export function saveJsonFile(pathname: string, data: unknown) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
-  fs.writeFileSync(pathname, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  writeFileSyncRetry(pathname, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   fs.chmodSync(pathname, 0o600);
 }

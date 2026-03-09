@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { renameRetry, writeFileRetry } from "./fs-retry.js";
 
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
@@ -39,13 +40,13 @@ export async function writeTextAtomic(
   await fs.mkdir(path.dirname(filePath), mkdirOptions);
   const tmp = `${filePath}.${randomUUID()}.tmp`;
   try {
-    await fs.writeFile(tmp, payload, "utf8");
+    await writeFileRetry(tmp, payload, "utf8");
     try {
       await fs.chmod(tmp, mode);
     } catch {
       // best-effort; ignore on platforms without chmod
     }
-    await fs.rename(tmp, filePath);
+    await renameRetry(tmp, filePath);
     try {
       await fs.chmod(filePath, mode);
     } catch {
