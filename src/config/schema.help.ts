@@ -763,6 +763,8 @@ export const FIELD_HELP: Record<string, string> = {
     "Max total characters across all injected workspace bootstrap files (default: 150000).",
   "agents.defaults.bootstrapPromptTruncationWarning":
     'Inject agent-visible warning text when bootstrap files are truncated: "off", "once" (default), or "always".',
+  "agents.defaults.contextInjection":
+    'When to inject workspace bootstrap files (AGENTS.md, SOUL.md, etc.) into the system prompt: "always" (default, every message) or "first-message-only" (skip when the session already has assistant messages, saving tokens on long conversations).',
   "agents.defaults.repoRoot":
     "Optional repository root shown in the system prompt runtime line (overrides auto-detect).",
   "agents.defaults.envelopeTimezone":

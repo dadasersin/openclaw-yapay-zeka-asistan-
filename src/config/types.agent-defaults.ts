@@ -147,6 +147,12 @@ export type AgentDefaultsConfig = {
    * - always: inject on every run with truncation
    */
   bootstrapPromptTruncationWarning?: "off" | "once" | "always";
+  /**
+   * Context injection mode for workspace bootstrap files:
+   * - always (default): inject on every message
+   * - first-message-only: inject only when the session has no prior assistant messages
+   */
+  contextInjection?: "always" | "first-message-only";
   /** Optional IANA timezone for the user (used in system prompt; defaults to host timezone). */
   userTimezone?: string;
   /** Time format in system prompt: auto (OS preference), 12-hour, or 24-hour. */

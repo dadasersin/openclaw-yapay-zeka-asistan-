@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import type { OpenClawConfig } from "../config/config.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
@@ -13,8 +14,49 @@ import {
   type WorkspaceBootstrapFile,
 } from "./workspace.js";
 
+const SESSION_HEAD_MAX_BYTES = 16384;
+const SESSION_HEAD_MAX_LINES = 100;
+
+/**
+ * Check whether a Pi session file already contains at least one assistant
+ * message. Reads only the first chunk of the file to avoid loading the entire
+ * transcript into memory.
+ */
+export async function sessionHasAssistantMessages(sessionFile: string): Promise<boolean> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(sessionFile, "r");
+    const buf = Buffer.alloc(SESSION_HEAD_MAX_BYTES);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    if (bytesRead <= 0) {
+      return false;
+    }
+    const chunk = buf.toString("utf-8", 0, bytesRead);
+    const lines = chunk.split(/\r?\n/).slice(0, SESSION_HEAD_MAX_LINES);
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed?.message?.role === "assistant") {
+          return true;
+        }
+      } catch {
+        // skip malformed lines
+      }
+    }
+  } catch {
+    // file doesn't exist or can't be read — treat as no history
+  } finally {
+    await handle?.close();
+  }
+  return false;
+}
+
 export type BootstrapContextMode = "full" | "lightweight";
 export type BootstrapContextRunKind = "default" | "heartbeat" | "cron";
+export type ContextInjectionMode = "always" | "first-message-only";
 
 export function makeBootstrapWarn(params: {
   sessionLabel: string;
@@ -61,6 +103,23 @@ function applyContextModeFilter(params: {
   return [];
 }
 
+/**
+ * Apply context injection mode filtering. When mode is "first-message-only"
+ * and the session already has assistant messages, skip all context files
+ * to save tokens on subsequent messages.
+ */
+export function applyContextInjectionFilter(params: {
+  files: WorkspaceBootstrapFile[];
+  contextInjection?: ContextInjectionMode;
+  hasExistingAssistantMessages: boolean;
+}): WorkspaceBootstrapFile[] {
+  const mode = params.contextInjection ?? "always";
+  if (mode === "first-message-only" && params.hasExistingAssistantMessages) {
+    return [];
+  }
+  return params.files;
+}
+
 export async function resolveBootstrapFilesForRun(params: {
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -70,6 +129,8 @@ export async function resolveBootstrapFilesForRun(params: {
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
+  contextInjection?: ContextInjectionMode;
+  hasExistingAssistantMessages?: boolean;
 }): Promise<WorkspaceBootstrapFile[]> {
   const sessionKey = params.sessionKey ?? params.sessionId;
   const rawFiles = params.sessionKey
@@ -78,10 +139,15 @@ export async function resolveBootstrapFilesForRun(params: {
         sessionKey: params.sessionKey,
       })
     : await loadWorkspaceBootstrapFiles(params.workspaceDir);
-  const bootstrapFiles = applyContextModeFilter({
+  const modeFiltered = applyContextModeFilter({
     files: filterBootstrapFilesForSession(rawFiles, sessionKey),
     contextMode: params.contextMode,
     runKind: params.runKind,
+  });
+  const bootstrapFiles = applyContextInjectionFilter({
+    files: modeFiltered,
+    contextInjection: params.contextInjection,
+    hasExistingAssistantMessages: params.hasExistingAssistantMessages ?? false,
   });
 
   const updated = await applyBootstrapHookOverrides({
@@ -104,6 +170,8 @@ export async function resolveBootstrapContextForRun(params: {
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
+  contextInjection?: ContextInjectionMode;
+  hasExistingAssistantMessages?: boolean;
 }): Promise<{
   bootstrapFiles: WorkspaceBootstrapFile[];
   contextFiles: EmbeddedContextFile[];
