@@ -20,6 +20,11 @@ export type UiSettings = {
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
   locale?: string;
+  tools?: {
+    exec?: {
+      notifyOnExit?: boolean;
+    };
+  };
 };
 
 function getSessionStorage(): Storage | null {
@@ -112,6 +117,11 @@ export function loadSettings(): UiSettings {
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},
+    tools: {
+      exec: {
+        notifyOnExit: true,
+      },
+    },
   };
 
   try {
@@ -150,6 +160,14 @@ export function loadSettings(): UiSettings {
         typeof parsed.chatShowThinking === "boolean"
           ? parsed.chatShowThinking
           : defaults.chatShowThinking,
+      tools: {
+        exec: {
+          notifyOnExit:
+            typeof parsed.tools?.exec?.notifyOnExit === "boolean"
+              ? parsed.tools.exec.notifyOnExit
+              : defaults.tools.exec.notifyOnExit,
+        },
+      },
       splitRatio:
         typeof parsed.splitRatio === "number" &&
         parsed.splitRatio >= 0.4 &&
