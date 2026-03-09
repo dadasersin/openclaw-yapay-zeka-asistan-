@@ -200,6 +200,7 @@ export function createOpenClawCodingTools(options?: {
   messageProvider?: string;
   agentAccountId?: string;
   messageTo?: string;
+  messageConversationId?: string;
   messageThreadId?: string | number;
   sandbox?: SandboxContext | null;
   sessionKey?: string;
@@ -479,6 +480,7 @@ export function createOpenClawCodingTools(options?: {
       agentChannel: resolveGatewayMessageChannel(options?.messageProvider),
       agentAccountId: options?.agentAccountId,
       agentTo: options?.messageTo,
+      agentConversationId: options?.messageConversationId,
       agentThreadId: options?.messageThreadId,
       agentGroupId: options?.groupId ?? null,
       agentGroupChannel: options?.groupChannel ?? null,
