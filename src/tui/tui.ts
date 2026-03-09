@@ -357,6 +357,7 @@ export async function runTui(opts: TuiOptions) {
   let statusTimer: NodeJS.Timeout | null = null;
   let statusStartedAt: number | null = null;
   let lastActivityStatus = activityStatus;
+  let sessionInfoRefreshTimer: NodeJS.Timeout | null = null;
 
   const state: TuiStateAccess = {
     get agentDefaultId() {
@@ -820,6 +821,10 @@ export async function runTui(opts: TuiOptions) {
       return;
     }
     exitRequested = true;
+    if (sessionInfoRefreshTimer) {
+      clearInterval(sessionInfoRefreshTimer);
+      sessionInfoRefreshTimer = null;
+    }
     client.stop();
     stopTuiSafely(() => tui.stop());
     process.exit(0);
@@ -931,6 +936,14 @@ export async function runTui(opts: TuiOptions) {
     const reconnected = wasDisconnected;
     wasDisconnected = false;
     setConnectionStatus("connected");
+    // Start periodic session info refresh (every 30s) to pick up config changes
+    if (!sessionInfoRefreshTimer) {
+      sessionInfoRefreshTimer = setInterval(() => {
+        if (isConnected && activityStatus === "idle") {
+          void refreshSessionInfo();
+        }
+      }, 30_000);
+    }
     void (async () => {
       await refreshAgents();
       updateHeader();
@@ -950,6 +963,11 @@ export async function runTui(opts: TuiOptions) {
     isConnected = false;
     wasDisconnected = true;
     historyLoaded = false;
+    // Stop periodic session info refresh
+    if (sessionInfoRefreshTimer) {
+      clearInterval(sessionInfoRefreshTimer);
+      sessionInfoRefreshTimer = null;
+    }
     const disconnectState = resolveGatewayDisconnectState(reason);
     setConnectionStatus(disconnectState.connectionStatus, 5000);
     setActivityStatus(disconnectState.activityStatus);
