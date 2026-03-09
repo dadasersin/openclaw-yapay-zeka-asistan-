@@ -276,7 +276,8 @@ export async function launchOpenClawChrome(
       "--password-store=basic",
     ];
 
-    if (resolved.headless) {
+    const useHeadless = profile.headless;
+    if (useHeadless) {
       // Best-effort; older Chromes may ignore.
       args.push("--headless=new");
       args.push("--disable-gpu");
