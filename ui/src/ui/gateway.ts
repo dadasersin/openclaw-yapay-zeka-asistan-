@@ -53,29 +53,6 @@ export function resolveGatewayErrorDetailCode(
   return readConnectErrorDetailCode(error?.details);
 }
 
-/**
- * Auth errors that won't resolve without user action — don't auto-reconnect.
- *
- * NOTE: AUTH_TOKEN_MISMATCH is intentionally NOT included here because the
- * browser client has a device-token fallback flow: a stale cached device token
- * triggers a mismatch, sendConnect() clears it, and the next reconnect retries
- * with opts.token (the shared gateway token). Blocking reconnect on mismatch
- * would break that fallback. The rate limiter still catches persistent wrong
- * tokens after N failures → AUTH_RATE_LIMITED stops the loop.
- */
-export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): boolean {
-  if (!error) {
-    return false;
-  }
-  const code = resolveGatewayErrorDetailCode(error);
-  return (
-    code === ConnectErrorDetailCodes.AUTH_TOKEN_MISSING ||
-    code === ConnectErrorDetailCodes.AUTH_PASSWORD_MISSING ||
-    code === ConnectErrorDetailCodes.AUTH_PASSWORD_MISMATCH ||
-    code === ConnectErrorDetailCodes.AUTH_RATE_LIMITED
-  );
-}
-
 export type GatewayHelloOk = {
   type: "hello-ok";
   protocol: number;
@@ -114,8 +91,41 @@ export type GatewayBrowserClientOptions = {
   onGap?: (info: { expected: number; received: number }) => void;
 };
 
+function normalizeAuthToken(value: string | undefined | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 // 4008 = application-defined code (browser rejects 1008 "Policy Violation")
 const CONNECT_FAILED_CLOSE_CODE = 4008;
+
+export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): boolean {
+  if (!error) {
+    return false;
+  }
+  if (error.code === "AUTH_TOKEN_MISSING") {
+    return true;
+  }
+  const detailCode = resolveGatewayErrorDetailCode(error);
+  return (
+    detailCode === ConnectErrorDetailCodes.AUTH_PASSWORD_MISSING ||
+    detailCode === ConnectErrorDetailCodes.AUTH_PASSWORD_MISMATCH ||
+    detailCode === ConnectErrorDetailCodes.AUTH_RATE_LIMITED ||
+    detailCode === ConnectErrorDetailCodes.AUTH_TOKEN_MISSING
+  );
+}
+
+function isAuthMismatchError(error: unknown): boolean {
+  if (!(error instanceof GatewayRequestError)) {
+    return false;
+  }
+  const detailCode = resolveGatewayErrorDetailCode(error);
+  return (
+    detailCode === ConnectErrorDetailCodes.AUTH_PASSWORD_MISMATCH ||
+    detailCode === ConnectErrorDetailCodes.AUTH_TOKEN_MISMATCH ||
+    detailCode === ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH
+  );
+}
 
 export class GatewayBrowserClient {
   private ws: WebSocket | null = null;
@@ -127,8 +137,11 @@ export class GatewayBrowserClient {
   private connectTimer: number | null = null;
   private backoffMs = 800;
   private pendingConnectError: GatewayErrorInfo | undefined;
+  private lastGoodAuthToken: string | undefined;
 
-  constructor(private opts: GatewayBrowserClientOptions) {}
+  constructor(private opts: GatewayBrowserClientOptions) {
+    this.lastGoodAuthToken = normalizeAuthToken(opts.token);
+  }
 
   start() {
     this.closed = false;
@@ -140,6 +153,7 @@ export class GatewayBrowserClient {
     this.ws?.close();
     this.ws = null;
     this.pendingConnectError = undefined;
+    this.lastGoodAuthToken = undefined;
     this.flushPending(new Error("gateway client stopped"));
   }
 
@@ -205,22 +219,20 @@ export class GatewayBrowserClient {
     const role = "operator";
     let deviceIdentity: Awaited<ReturnType<typeof loadOrCreateDeviceIdentity>> | null = null;
     let canFallbackToShared = false;
-    const explicitGatewayToken = this.opts.token?.trim() || undefined;
-    let authToken = explicitGatewayToken;
-    let deviceToken: string | undefined;
+    const sharedToken = normalizeAuthToken(this.opts.token);
+    let authToken = sharedToken ?? this.lastGoodAuthToken;
 
     if (isSecureContext) {
       deviceIdentity = await loadOrCreateDeviceIdentity();
-      const storedToken = loadDeviceAuthToken({
-        deviceId: deviceIdentity.deviceId,
-        role,
-      })?.token;
-      deviceToken = !(explicitGatewayToken || this.opts.password?.trim())
-        ? (storedToken ?? undefined)
-        : undefined;
-      canFallbackToShared = Boolean(deviceToken && explicitGatewayToken);
+      const storedToken = normalizeAuthToken(
+        loadDeviceAuthToken({
+          deviceId: deviceIdentity.deviceId,
+          role,
+        })?.token,
+      );
+      authToken = storedToken ?? sharedToken ?? this.lastGoodAuthToken;
+      canFallbackToShared = Boolean(sharedToken);
     }
-    authToken = explicitGatewayToken ?? deviceToken;
     const auth =
       authToken || this.opts.password
         ? {
@@ -266,7 +278,7 @@ export class GatewayBrowserClient {
       maxProtocol: 3,
       client: {
         id: this.opts.clientName ?? GATEWAY_CLIENT_NAMES.CONTROL_UI,
-        version: this.opts.clientVersion ?? "control-ui",
+        version: this.opts.clientVersion ?? "dev",
         platform: this.opts.platform ?? navigator.platform ?? "web",
         mode: this.opts.mode ?? GATEWAY_CLIENT_MODES.WEBCHAT,
         instanceId: this.opts.instanceId,
@@ -282,7 +294,12 @@ export class GatewayBrowserClient {
 
     void this.request<GatewayHelloOk>("connect", params)
       .then((hello) => {
+        if (authToken) {
+          this.lastGoodAuthToken = authToken;
+        }
         if (hello?.auth?.deviceToken && deviceIdentity) {
+          this.lastGoodAuthToken =
+            normalizeAuthToken(hello.auth.deviceToken) ?? this.lastGoodAuthToken;
           storeDeviceAuthToken({
             deviceId: deviceIdentity.deviceId,
             role: hello.auth.role ?? role,
@@ -303,8 +320,9 @@ export class GatewayBrowserClient {
         } else {
           this.pendingConnectError = undefined;
         }
-        if (canFallbackToShared && deviceIdentity) {
+        if (canFallbackToShared && deviceIdentity && isAuthMismatchError(err)) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
+          this.lastGoodAuthToken = sharedToken;
         }
         this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
       });
