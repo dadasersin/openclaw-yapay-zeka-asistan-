@@ -126,9 +126,6 @@ function errorBackoffMs(
   return scheduleMs[Math.max(0, idx)];
 }
 
-const ISOLATED_DEGRADED_HINT =
-  "Isolated runner may be degraded (possible stuck requests-in-flight after a network interruption); command lanes were reset for self-healing.";
-
 function looksLikeIsolatedDegradedError(errorText: string): boolean {
   const raw = errorText.trim().toLowerCase();
   if (!raw) {
@@ -167,16 +164,10 @@ function maybeRecoverIsolatedRunnerDegradedState(params: {
     return result;
   }
 
+  let resetSucceeded = false;
   try {
     state.deps.resetCommandLanes?.();
-    state.deps.log.warn(
-      {
-        jobId: job.id,
-        jobName: job.name,
-        priorConsecutiveErrors,
-      },
-      "cron: detected degraded isolated runner; reset command lanes",
-    );
+    resetSucceeded = true;
   } catch (err) {
     state.deps.log.warn(
       {
@@ -188,9 +179,17 @@ function maybeRecoverIsolatedRunnerDegradedState(params: {
     );
   }
 
-  if (!errorText.includes(ISOLATED_DEGRADED_HINT)) {
-    result.error = `${errorText} ${ISOLATED_DEGRADED_HINT}`;
+  if (resetSucceeded) {
+    state.deps.log.warn(
+      {
+        jobId: job.id,
+        jobName: job.name,
+        priorConsecutiveErrors,
+      },
+      "cron: detected degraded isolated runner; reset cron command lane",
+    );
   }
+
   return result;
 }
 
