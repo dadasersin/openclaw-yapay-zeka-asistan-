@@ -329,6 +329,43 @@ describe("applyConfig", () => {
     expect(params.baseHash).toBe("hash-apply-1");
     expect(params.sessionKey).toBe("agent:main:web:dm:test");
   });
+
+  it("refreshes the snapshot after apply hash conflicts without discarding edits", async () => {
+    const request = vi.fn().mockImplementation(async (method: string) => {
+      if (method === "config.apply") {
+        throw new Error("config changed since last load; re-run config.get and retry");
+      }
+      if (method === "config.get") {
+        return {
+          hash: "hash-apply-2",
+          config: { agents: { defaults: { model: "ollama/qwen3-coder:30b-64k" } } },
+          valid: true,
+          issues: [],
+          raw: '{ "agents": { "defaults": { "model": "ollama/qwen3-coder:30b-64k" } } }',
+        };
+      }
+      return {};
+    });
+    const state = createState();
+    state.connected = true;
+    state.client = { request } as unknown as ConfigState["client"];
+    state.applySessionKey = "agent:main:web:dm:test";
+    state.configFormMode = "form";
+    state.configFormDirty = true;
+    state.configForm = { agents: { defaults: { model: "anthropic/claude-opus-4-6" } } };
+    state.configRaw = '{ "agents": { "defaults": { "model": "anthropic/claude-opus-4-6" } } }';
+    state.configSnapshot = { hash: "hash-apply-1" };
+
+    await applyConfig(state);
+
+    expect(request.mock.calls.map((call) => call[0])).toEqual(["config.apply", "config.get"]);
+    expect(state.configSnapshot?.hash).toBe("hash-apply-2");
+    expect(state.configFormDirty).toBe(true);
+    expect(state.configForm).toEqual({
+      agents: { defaults: { model: "anthropic/claude-opus-4-6" } },
+    });
+    expect(state.lastError).toContain("config changed since last load");
+  });
 });
 
 describe("saveConfig", () => {
@@ -389,6 +426,42 @@ describe("saveConfig", () => {
     };
     expect(parsed.gateway.port).toBe("18789");
     expect(params.baseHash).toBe("hash-save-2");
+  });
+
+  it("refreshes the snapshot after save hash conflicts without discarding edits", async () => {
+    const request = vi.fn().mockImplementation(async (method: string) => {
+      if (method === "config.set") {
+        throw new Error("config changed since last load; re-run config.get and retry");
+      }
+      if (method === "config.get") {
+        return {
+          hash: "hash-save-2",
+          config: { agents: { defaults: { model: "ollama/qwen3-coder:30b-64k" } } },
+          valid: true,
+          issues: [],
+          raw: '{ "agents": { "defaults": { "model": "ollama/qwen3-coder:30b-64k" } } }',
+        };
+      }
+      return {};
+    });
+    const state = createState();
+    state.connected = true;
+    state.client = { request } as unknown as ConfigState["client"];
+    state.configFormMode = "form";
+    state.configFormDirty = true;
+    state.configForm = { agents: { defaults: { model: "anthropic/claude-opus-4-6" } } };
+    state.configRaw = '{ "agents": { "defaults": { "model": "anthropic/claude-opus-4-6" } } }';
+    state.configSnapshot = { hash: "hash-save-1" };
+
+    await saveConfig(state);
+
+    expect(request.mock.calls.map((call) => call[0])).toEqual(["config.set", "config.get"]);
+    expect(state.configSnapshot?.hash).toBe("hash-save-2");
+    expect(state.configFormDirty).toBe(true);
+    expect(state.configForm).toEqual({
+      agents: { defaults: { model: "anthropic/claude-opus-4-6" } },
+    });
+    expect(state.lastError).toContain("config changed since last load");
   });
 });
 

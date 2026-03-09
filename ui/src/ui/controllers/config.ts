@@ -44,6 +44,10 @@ type ApplyConfigSnapshotOptions = {
   discardPendingEdits?: boolean;
 };
 
+function isConfigHashConflictError(error: unknown): boolean {
+  return String(error).includes("config changed since last load");
+}
+
 export async function loadConfig(state: ConfigState, options?: LoadConfigOptions) {
   if (!state.client || !state.connected) {
     return;
@@ -166,7 +170,11 @@ export async function saveConfig(state: ConfigState) {
     state.configFormDirty = false;
     await loadConfig(state, { discardPendingEdits: true });
   } catch (err) {
-    state.lastError = String(err);
+    const errorMessage = String(err);
+    if (isConfigHashConflictError(err)) {
+      await loadConfig(state);
+    }
+    state.lastError = errorMessage;
   } finally {
     state.configSaving = false;
   }
@@ -193,7 +201,11 @@ export async function applyConfig(state: ConfigState) {
     state.configFormDirty = false;
     await loadConfig(state, { discardPendingEdits: true });
   } catch (err) {
-    state.lastError = String(err);
+    const errorMessage = String(err);
+    if (isConfigHashConflictError(err)) {
+      await loadConfig(state);
+    }
+    state.lastError = errorMessage;
   } finally {
     state.configApplying = false;
   }
