@@ -134,6 +134,12 @@ export type MediaToolsConfig = {
   models?: MediaUnderstandingModelConfig[];
   /** Max concurrent media understanding runs. */
   concurrency?: number;
+  /**
+   * Max bytes for media files staged into sandbox containers.
+   * Default: 5MB (5 * 1024 * 1024 = 5242880).
+   * Used when copying inbound media into sandbox workspace.
+   */
+  maxBytes?: number;
   image?: MediaUnderstandingConfig;
   audio?: MediaUnderstandingConfig;
   video?: MediaUnderstandingConfig;

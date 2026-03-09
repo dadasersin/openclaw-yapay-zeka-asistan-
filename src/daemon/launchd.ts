@@ -352,34 +352,6 @@ function isUnsupportedGuiDomain(detail: string): boolean {
   );
 }
 
-const RESTART_PID_WAIT_TIMEOUT_MS = 10_000;
-const RESTART_PID_WAIT_INTERVAL_MS = 200;
-
-async function sleepMs(ms: number): Promise<void> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function waitForPidExit(pid: number): Promise<void> {
-  if (!Number.isFinite(pid) || pid <= 1) {
-    return;
-  }
-  const deadline = Date.now() + RESTART_PID_WAIT_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0);
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ESRCH" || code === "EPERM") {
-        return;
-      }
-      return;
-    }
-    await sleepMs(RESTART_PID_WAIT_INTERVAL_MS);
-  }
-}
-
 export async function stopLaunchAgent({ stdout, env }: GatewayServiceControlArgs): Promise<void> {
   const domain = resolveGuiDomain();
   const label = resolveLaunchAgentLabel({ env });
@@ -475,25 +447,28 @@ export async function restartLaunchAgent({
   const serviceEnv = env ?? (process.env as GatewayServiceEnv);
   const domain = resolveGuiDomain();
   const label = resolveLaunchAgentLabel({ env: serviceEnv });
+  const target = `${domain}/${label}`;
+
+  // Use kickstart -k to kill and restart in one atomic operation.
+  // This avoids the bootout + bootstrap dance which can fail silently on macOS.
+  // kickstart -k kills the process and launchd restarts it immediately.
+  const start = await execLaunchctl(["kickstart", "-k", target]);
+  if (start.code === 0) {
+    try {
+      stdout.write(`${formatLine("Restarted LaunchAgent", label)}\n`);
+    } catch {
+      // ignore write errors
+    }
+    return;
+  }
+
+  // kickstart fails when the service was previously booted out (deregistered from launchd).
+  // Fall back to bootstrap (re-register from plist) + kickstart.
   const plistPath = resolveLaunchAgentPlistPath(serviceEnv);
 
-  const runtime = await execLaunchctl(["print", `${domain}/${label}`]);
-  const previousPid =
-    runtime.code === 0
-      ? parseLaunchctlPrint(runtime.stdout || runtime.stderr || "").pid
-      : undefined;
+  // Clear any persisted disabled state before bootstrap
+  await execLaunchctl(["enable", target]);
 
-  const stop = await execLaunchctl(["bootout", `${domain}/${label}`]);
-  if (stop.code !== 0 && !isLaunchctlNotLoaded(stop)) {
-    throw new Error(`launchctl bootout failed: ${stop.stderr || stop.stdout}`.trim());
-  }
-  if (typeof previousPid === "number") {
-    await waitForPidExit(previousPid);
-  }
-
-  // launchd can persist "disabled" state after bootout; clear it before bootstrap
-  // (matches the same guard in installLaunchAgent).
-  await execLaunchctl(["enable", `${domain}/${label}`]);
   const boot = await execLaunchctl(["bootstrap", domain, plistPath]);
   if (boot.code !== 0) {
     const detail = (boot.stderr || boot.stdout).trim();
@@ -511,9 +486,9 @@ export async function restartLaunchAgent({
     throw new Error(`launchctl bootstrap failed: ${detail}`);
   }
 
-  const start = await execLaunchctl(["kickstart", "-k", `${domain}/${label}`]);
-  if (start.code !== 0) {
-    throw new Error(`launchctl kickstart failed: ${start.stderr || start.stdout}`.trim());
+  const retry = await execLaunchctl(["kickstart", "-k", target]);
+  if (retry.code !== 0) {
+    throw new Error(`launchctl kickstart failed: ${retry.stderr || retry.stdout}`.trim());
   }
   try {
     stdout.write(`${formatLine("Restarted LaunchAgent", `${domain}/${label}`)}\n`);
