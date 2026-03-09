@@ -5,6 +5,9 @@ import {
   normalizeUsageDisplay,
   resolveResponseUsageMode,
 } from "../auto-reply/thinking.js";
+import { createProviderAuthChecker } from "../commands/model-picker.js";
+import { formatTokenK } from "../commands/models/shared.js";
+import { loadConfig } from "../config/config.js";
 import type { SessionsPatchResult } from "../gateway/protocol/index.js";
 import { formatRelativeTimestamp } from "../infra/format-time/format-relative.ts";
 import { normalizeAgentId } from "../routing/session-key.js";
@@ -106,11 +109,13 @@ export function createCommandHandlers(context: CommandHandlerContext) {
         tui.requestRender();
         return;
       }
-      const items = models.map((model) => ({
-        value: `${model.provider}/${model.id}`,
-        label: `${model.provider}/${model.id}`,
-        description: model.name && model.name !== model.id ? model.name : "",
-      }));
+
+      // Partition models: show configured/authenticated providers first
+      // Note: agentDir not passed — agent-scoped auth credentials are not checked.
+      // CommandHandlerContext doesn't expose agentDir yet; thread it through when available.
+      const hasAuth = createProviderAuthChecker({ cfg: loadConfig() });
+      const items = partitionModelItems(models, hasAuth);
+
       const selector = createSearchableSelectList(items, 9);
       openSelector(selector, async (value) => {
         try {
@@ -518,4 +523,47 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     openSettings,
     setAgent,
   };
+}
+
+/** Build select items from model list, partitioned by auth status. */
+export function partitionModelItems(
+  models: {
+    id: string;
+    provider: string;
+    name?: string;
+    contextWindow?: number;
+    reasoning?: boolean;
+  }[],
+  hasAuth: (provider: string) => boolean,
+): SelectItem[] {
+  const configuredItems: SelectItem[] = [];
+  const otherItems: SelectItem[] = [];
+
+  for (const model of models) {
+    const value = `${model.provider}/${model.id}`;
+    const descParts: string[] = [];
+    if (model.name && model.name !== model.id) {
+      descParts.push(model.name);
+    }
+    if (model.contextWindow) {
+      descParts.push(`ctx ${formatTokenK(model.contextWindow)}`);
+    }
+    if (model.reasoning) {
+      descParts.push("reasoning");
+    }
+
+    const item: SelectItem = {
+      value,
+      label: value,
+      description: descParts.join(" · "),
+    };
+
+    if (hasAuth(model.provider)) {
+      configuredItems.push(item);
+    } else {
+      otherItems.push(item);
+    }
+  }
+
+  return configuredItems.length > 0 ? [...configuredItems, ...otherItems] : [...otherItems];
 }
