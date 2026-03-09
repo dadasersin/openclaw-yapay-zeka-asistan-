@@ -31,17 +31,22 @@ export {
   webAuthExists,
 } from "./auth-store.js";
 
-let credsSaveQueue: Promise<void> = Promise.resolve();
+// Per-authDir queues so multi-account creds saves don't block each other.
+const credsSaveQueues = new Map<string, Promise<void>>();
 function enqueueSaveCreds(
   authDir: string,
   saveCreds: () => Promise<void> | void,
   logger: ReturnType<typeof getChildLogger>,
 ): void {
-  credsSaveQueue = credsSaveQueue
-    .then(() => safeSaveCreds(authDir, saveCreds, logger))
-    .catch((err) => {
-      logger.warn({ error: String(err) }, "WhatsApp creds save queue error");
-    });
+  const prev = credsSaveQueues.get(authDir) ?? Promise.resolve();
+  credsSaveQueues.set(
+    authDir,
+    prev
+      .then(() => safeSaveCreds(authDir, saveCreds, logger))
+      .catch((err) => {
+        logger.warn({ error: String(err) }, "WhatsApp creds save queue error");
+      }),
+  );
 }
 
 async function safeSaveCreds(
@@ -186,8 +191,17 @@ export async function waitForWaConnection(sock: ReturnType<typeof makeWASocket>)
 export function getStatusCode(err: unknown) {
   return (
     (err as { output?: { statusCode?: number } })?.output?.statusCode ??
-    (err as { status?: number })?.status
+    (err as { status?: number })?.status ??
+    (err as { error?: { output?: { statusCode?: number } } })?.error?.output?.statusCode
   );
+}
+
+/** Await pending credential saves — scoped to one authDir, or all if omitted. */
+export function waitForCredsSaveQueue(authDir?: string): Promise<void> {
+  if (authDir) {
+    return credsSaveQueues.get(authDir) ?? Promise.resolve();
+  }
+  return Promise.all(credsSaveQueues.values()).then(() => {});
 }
 
 function safeStringify(value: unknown, limit = 800): string {
