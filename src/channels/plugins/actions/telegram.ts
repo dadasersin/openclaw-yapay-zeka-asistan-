@@ -62,6 +62,7 @@ function readTelegramMessageIdParam(
   const messageId = readNumberParam(params, "messageId", {
     required,
     integer: true,
+    strict: true,
   });
   if (required && typeof messageId !== "number") {
     throw new Error("messageId is required.");
@@ -71,8 +72,8 @@ function readTelegramMessageIdParam(
 
 function readTelegramTopicIdParam(params: Record<string, unknown>): number | undefined {
   return (
-    readNumberParam(params, "topicId", { integer: true }) ??
-    readNumberParam(params, "threadId", { integer: true })
+    readNumberParam(params, "topicId", { integer: true, strict: true }) ??
+    readNumberParam(params, "threadId", { integer: true, strict: true })
   );
 }
 
