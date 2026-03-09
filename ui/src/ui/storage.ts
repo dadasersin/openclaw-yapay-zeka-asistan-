@@ -88,18 +88,59 @@ function persistSessionToken(gatewayUrl: string, token: string) {
   }
 }
 
+function removeSessionToken(gatewayUrl: string) {
+  try {
+    const storage = getSessionStorage();
+    if (!storage) {
+      return;
+    }
+    storage.removeItem(tokenSessionKeyForGateway(gatewayUrl));
+  } catch {
+    // best-effort
+  }
+}
+
+function resolveDefaultGatewayBasePath(): string {
+  const configured =
+    typeof window !== "undefined" &&
+    typeof window.__OPENCLAW_CONTROL_UI_BASE_PATH__ === "string" &&
+    window.__OPENCLAW_CONTROL_UI_BASE_PATH__.trim();
+  return configured ? normalizeBasePath(configured) : inferBasePathFromPathname(location.pathname);
+}
+
+function inferHostname(host: string, hostname?: string): string {
+  if (hostname?.trim()) {
+    return hostname.trim();
+  }
+  if (host.startsWith("[")) {
+    const closingBracket = host.indexOf("]");
+    if (closingBracket > 1) {
+      return host.slice(1, closingBracket);
+    }
+  }
+  return host.split(":")[0] ?? host;
+}
+
+function normalizeDefaultGatewayHost(host: string, hostname: string): string {
+  if (inferHostname(host, hostname) !== "localhost") {
+    return host;
+  }
+  return host.replace(/^localhost(?=[:]|$)/, "127.0.0.1");
+}
+
+function buildDefaultGatewayUrl(opts?: { preferIpv4LoopbackLocalhost?: boolean }): string {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const basePath = resolveDefaultGatewayBasePath();
+  const shouldPreferIpv4Loopback = opts?.preferIpv4LoopbackLocalhost && proto === "ws";
+  const host = shouldPreferIpv4Loopback
+    ? normalizeDefaultGatewayHost(location.host, location.hostname)
+    : location.host;
+  return `${proto}://${host}${basePath}`;
+}
+
 export function loadSettings(): UiSettings {
-  const defaultUrl = (() => {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const configured =
-      typeof window !== "undefined" &&
-      typeof window.__OPENCLAW_CONTROL_UI_BASE_PATH__ === "string" &&
-      window.__OPENCLAW_CONTROL_UI_BASE_PATH__.trim();
-    const basePath = configured
-      ? normalizeBasePath(configured)
-      : inferBasePathFromPathname(location.pathname);
-    return `${proto}://${location.host}${basePath}`;
-  })();
+  const defaultUrl = buildDefaultGatewayUrl({ preferIpv4LoopbackLocalhost: true });
+  const legacyDefaultUrl = buildDefaultGatewayUrl({ preferIpv4LoopbackLocalhost: false });
 
   const defaults: UiSettings = {
     gatewayUrl: defaultUrl,
@@ -120,17 +161,25 @@ export function loadSettings(): UiSettings {
       return defaults;
     }
     const parsed = JSON.parse(raw) as Partial<UiSettings>;
+    const storedGatewayUrl =
+      typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
+        ? parsed.gatewayUrl.trim()
+        : defaults.gatewayUrl;
+    // Migrate older implicit localhost defaults to the safer IPv4 loopback target.
+    const migratedGatewayUrl =
+      storedGatewayUrl === legacyDefaultUrl && legacyDefaultUrl !== defaultUrl
+        ? defaultUrl
+        : storedGatewayUrl;
+    const sessionToken =
+      loadSessionToken(migratedGatewayUrl) ||
+      (migratedGatewayUrl !== storedGatewayUrl ? loadSessionToken(storedGatewayUrl) : "");
+    if (migratedGatewayUrl !== storedGatewayUrl) {
+      removeSessionToken(storedGatewayUrl);
+    }
     const settings = {
-      gatewayUrl:
-        typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
-          ? parsed.gatewayUrl.trim()
-          : defaults.gatewayUrl,
+      gatewayUrl: migratedGatewayUrl,
       // Gateway auth is intentionally in-memory only; scrub any legacy persisted token on load.
-      token: loadSessionToken(
-        typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
-          ? parsed.gatewayUrl.trim()
-          : defaults.gatewayUrl,
-      ),
+      token: sessionToken,
       sessionKey:
         typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()
           ? parsed.sessionKey.trim()
@@ -164,7 +213,7 @@ export function loadSettings(): UiSettings {
           : defaults.navGroupsCollapsed,
       locale: isSupportedLocale(parsed.locale) ? parsed.locale : undefined,
     };
-    if ("token" in parsed) {
+    if ("token" in parsed || migratedGatewayUrl !== storedGatewayUrl) {
       persistSettings(settings);
     }
     return settings;
