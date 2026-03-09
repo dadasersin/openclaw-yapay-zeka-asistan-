@@ -674,7 +674,7 @@ export const MINIMAX_TTS_MODELS = [
   "speech-02-turbo",
 ] as const;
 
-const DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io";
+export const DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io";
 
 function normalizeMinimaxBaseUrl(baseUrl?: string): string {
   const trimmed = baseUrl?.trim();

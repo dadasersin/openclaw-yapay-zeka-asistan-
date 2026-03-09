@@ -35,6 +35,7 @@ import {
   isValidOpenAIModel,
   isValidOpenAIVoice,
   isValidVoiceId,
+  DEFAULT_MINIMAX_BASE_URL,
   MINIMAX_TTS_MODELS,
   minimaxTTS,
   OPENAI_TTS_MODELS,
@@ -60,7 +61,6 @@ const DEFAULT_EDGE_VOICE = "en-US-MichelleNeural";
 const DEFAULT_EDGE_LANG = "en-US";
 const DEFAULT_EDGE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
 
-const DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io";
 const DEFAULT_MINIMAX_MODEL = "speech-2.8-hd";
 const DEFAULT_MINIMAX_VOICE_ID = "English_Graceful_Lady";
 const DEFAULT_MINIMAX_SPEED = 1.0;
@@ -93,9 +93,6 @@ const DEFAULT_OUTPUT = {
 
 const MINIMAX_OUTPUT = {
   default: { format: "mp3" as const, sampleRate: 32000, bitrate: 128000 },
-  // MiniMax supports opus indirectly via mp3; for voice-bubble channels we use mp3
-  // and let the channel handle it (Telegram auto-converts mp3 to voice notes).
-  telegram: { format: "mp3" as const, sampleRate: 32000, bitrate: 128000 },
 };
 
 const TELEPHONY_OUTPUT = {
@@ -783,7 +780,7 @@ export async function textToSpeech(params: {
         latencyMs,
         provider,
         outputFormat: providerOutputFormat,
-        voiceCompatible: output.voiceCompatible,
+        voiceCompatible: provider === "minimax" ? false : output.voiceCompatible,
       };
     } catch (err) {
       errors.push(formatTtsProviderError(provider, err));
