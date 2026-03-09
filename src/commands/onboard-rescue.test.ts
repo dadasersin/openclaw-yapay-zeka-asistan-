@@ -29,6 +29,21 @@ describe("onboard rescue helpers", () => {
     expect(resolveRescueGatewayPort(18_789)).toBe(19_789);
   });
 
+  it("adds a stable hash suffix when long monitored profiles must be truncated", () => {
+    const sharedPrefix = "a".repeat(57);
+    const first = `${sharedPrefix}left`;
+    const second = `${sharedPrefix}right`;
+
+    const firstRescue = resolveRescueProfileName(first);
+    const secondRescue = resolveRescueProfileName(second);
+
+    expect(firstRescue).not.toBe(secondRescue);
+    expect(firstRescue).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    expect(secondRescue).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    expect(firstRescue.endsWith("-rescue")).toBe(true);
+    expect(secondRescue.endsWith("-rescue")).toBe(true);
+  });
+
   it("rejects invalid monitored profile names before deriving rescue paths", () => {
     expect(() => resolveRescueProfileName("../work")).toThrow(
       'Invalid monitored profile "../work" (use letters, numbers, "_" or "-" only).',

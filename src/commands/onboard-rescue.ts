@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ensureAuthProfileStore, saveAuthProfileStore } from "../agents/auth-profiles.js";
@@ -20,6 +21,8 @@ import { randomToken, waitForGatewayReachable } from "./onboard-helpers.js";
 
 const RESCUE_JOB_NAME_PREFIX = "Rescue watchdog";
 const RESCUE_PROFILE_SUFFIX = "-rescue";
+const PROFILE_NAME_MAX_LENGTH = 64;
+const TRUNCATED_RESCUE_HASH_LENGTH = 8;
 const DEFAULT_RESCUE_INTERVAL_MS = 5 * 60_000;
 const RESCUE_AGENT_TIMEOUT_SECONDS = 120;
 const RESCUE_ENV_ALLOWLIST = [
@@ -94,9 +97,17 @@ export function resolveRescueProfileName(monitoredProfile: string): string {
   if (normalized === "default") {
     return "rescue";
   }
-  const maxBaseLength = 64 - RESCUE_PROFILE_SUFFIX.length;
-  const base = normalized.slice(0, Math.max(1, maxBaseLength));
-  return `${base}${RESCUE_PROFILE_SUFFIX}`;
+  const maxBaseLength = PROFILE_NAME_MAX_LENGTH - RESCUE_PROFILE_SUFFIX.length;
+  if (normalized.length <= maxBaseLength) {
+    return `${normalized}${RESCUE_PROFILE_SUFFIX}`;
+  }
+  // Long monitored profiles need a stable disambiguator so rescue state does not
+  // collide when multiple valid profile names share the same truncated prefix.
+  const hashSuffix = `-${createHash("sha256").update(normalized).digest("hex").slice(0, TRUNCATED_RESCUE_HASH_LENGTH)}`;
+  const hashedBaseLength =
+    PROFILE_NAME_MAX_LENGTH - RESCUE_PROFILE_SUFFIX.length - hashSuffix.length;
+  const base = normalized.slice(0, Math.max(1, hashedBaseLength));
+  return `${base}${hashSuffix}${RESCUE_PROFILE_SUFFIX}`;
 }
 
 export function resolveRescueGatewayPort(mainPort: number): number {
