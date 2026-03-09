@@ -60,17 +60,19 @@ export function normalizeModelCompat(model: Model<Api>): Model<Api> {
   // force these compat flags off.
   const compat = model.compat ?? undefined;
   // When baseUrl is empty the pi-ai library defaults to api.openai.com, so
-  // leave compat unchanged and let default native behavior apply.
-  // Note: explicit true values are intentionally overridden for non-native
-  // endpoints for safety.
+  // note: explicit true values are intentionally overriden for non-native
+  // endpoints for supportsDeveloperRole and supportsUsageInStreaming out of safety,
+  // but supportsStrictMode explicitly allows an escape hatch since some vanity urls
+  // are true native proxies.
   const needsForce = baseUrl ? !isOpenAINativeEndpoint(baseUrl) : false;
   if (!needsForce) {
     return model;
   }
+  const targetStrictMode = compat?.supportsStrictMode ?? false;
   if (
     compat?.supportsDeveloperRole === false &&
     compat?.supportsUsageInStreaming === false &&
-    compat?.supportsStrictMode === false
+    compat?.supportsStrictMode === targetStrictMode
   ) {
     return model;
   }
@@ -83,7 +85,7 @@ export function normalizeModelCompat(model: Model<Api>): Model<Api> {
           ...compat,
           supportsDeveloperRole: false,
           supportsUsageInStreaming: false,
-          supportsStrictMode: false,
+          supportsStrictMode: targetStrictMode,
         }
       : {
           supportsDeveloperRole: false,
