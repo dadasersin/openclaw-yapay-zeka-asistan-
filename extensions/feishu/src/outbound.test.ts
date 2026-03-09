@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const sendMediaFeishuMock = vi.hoisted(() => vi.fn());
 const sendMessageFeishuMock = vi.hoisted(() => vi.fn());
 const sendMarkdownCardFeishuMock = vi.hoisted(() => vi.fn());
+const recordFeishuNativeThreadBindingMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./media.js", () => ({
   sendMediaFeishu: sendMediaFeishuMock,
@@ -14,6 +15,10 @@ vi.mock("./media.js", () => ({
 vi.mock("./send.js", () => ({
   sendMessageFeishu: sendMessageFeishuMock,
   sendMarkdownCardFeishu: sendMarkdownCardFeishuMock,
+}));
+
+vi.mock("./thread-bindings.js", () => ({
+  recordFeishuNativeThreadBinding: recordFeishuNativeThreadBindingMock,
 }));
 
 vi.mock("./runtime.js", () => ({
@@ -171,9 +176,72 @@ describe("feishuOutbound.sendText local-image auto-convert", () => {
         to: "chat_1",
         text: "hello",
         replyToMessageId: "om_thread_2",
+        replyInThread: true,
         accountId: "main",
       }),
     );
+  });
+
+  it("parses bound Feishu thread targets into chat target plus reply thread root", async () => {
+    await sendText({
+      cfg: {} as any,
+      to: "channel:oc_thread_chat:thread:om_root_3",
+      text: "hello",
+      accountId: "main",
+    } as any);
+
+    expect(sendMessageFeishuMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "chat:oc_thread_chat",
+        text: "hello",
+        replyToMessageId: "om_root_3",
+        replyInThread: true,
+        accountId: "main",
+      }),
+    );
+  });
+
+  it("records native thread aliases for routed Feishu thread targets", async () => {
+    sendMessageFeishuMock.mockResolvedValue({
+      messageId: "text_msg",
+      nativeThreadId: "omt_thread_3",
+    });
+
+    await sendText({
+      cfg: {} as any,
+      to: "channel:oc_thread_chat:thread:om_root_3",
+      text: "hello",
+      accountId: "main",
+    } as any);
+
+    expect(recordFeishuNativeThreadBindingMock).toHaveBeenCalledWith({
+      accountId: "main",
+      chatId: "oc_thread_chat",
+      rootMessageId: "om_root_3",
+      nativeThreadId: "omt_thread_3",
+    });
+  });
+
+  it("records native thread aliases for explicit threadId sends", async () => {
+    sendMessageFeishuMock.mockResolvedValue({
+      messageId: "text_msg",
+      nativeThreadId: "omt_thread_explicit",
+    });
+
+    await sendText({
+      cfg: {} as any,
+      to: "chat:oc_thread_chat",
+      threadId: "om_root_explicit",
+      text: "hello",
+      accountId: "main",
+    } as any);
+
+    expect(recordFeishuNativeThreadBindingMock).toHaveBeenCalledWith({
+      accountId: "main",
+      chatId: "oc_thread_chat",
+      rootMessageId: "om_root_explicit",
+      nativeThreadId: "omt_thread_explicit",
+    });
   });
 });
 
@@ -344,6 +412,7 @@ describe("feishuOutbound.sendMedia renderMode", () => {
         to: "chat_1",
         mediaUrl: "https://example.com/image.png",
         replyToMessageId: "om_thread_1",
+        replyInThread: true,
         accountId: "main",
       }),
     );
@@ -352,8 +421,32 @@ describe("feishuOutbound.sendMedia renderMode", () => {
         to: "chat_1",
         text: "caption",
         replyToMessageId: "om_thread_1",
+        replyInThread: true,
         accountId: "main",
       }),
     );
+  });
+
+  it("records native thread aliases for explicit threadId media sends", async () => {
+    sendMediaFeishuMock.mockResolvedValue({
+      messageId: "media_msg",
+      nativeThreadId: "omt_thread_media",
+    });
+
+    await feishuOutbound.sendMedia?.({
+      cfg: {} as any,
+      to: "chat:oc_thread_chat",
+      text: "",
+      mediaUrl: "https://example.com/image.png",
+      threadId: "om_root_media",
+      accountId: "main",
+    });
+
+    expect(recordFeishuNativeThreadBindingMock).toHaveBeenCalledWith({
+      accountId: "main",
+      chatId: "oc_thread_chat",
+      rootMessageId: "om_root_media",
+      nativeThreadId: "omt_thread_media",
+    });
   });
 });

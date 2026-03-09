@@ -10,6 +10,7 @@ const resolveReceiveIdTypeMock = vi.hoisted(() => vi.fn());
 const createReplyDispatcherWithTypingMock = vi.hoisted(() => vi.fn());
 const addTypingIndicatorMock = vi.hoisted(() => vi.fn(async () => ({ messageId: "om_msg" })));
 const removeTypingIndicatorMock = vi.hoisted(() => vi.fn(async () => {}));
+const recordFeishuNativeThreadBindingMock = vi.hoisted(() => vi.fn());
 const streamingInstances = vi.hoisted(() => [] as any[]);
 
 vi.mock("./accounts.js", () => ({ resolveFeishuAccount: resolveFeishuAccountMock }));
@@ -24,6 +25,9 @@ vi.mock("./targets.js", () => ({ resolveReceiveIdType: resolveReceiveIdTypeMock 
 vi.mock("./typing.js", () => ({
   addTypingIndicator: addTypingIndicatorMock,
   removeTypingIndicator: removeTypingIndicatorMock,
+}));
+vi.mock("./thread-bindings.js", () => ({
+  recordFeishuNativeThreadBinding: recordFeishuNativeThreadBindingMock,
 }));
 vi.mock("./streaming-card.js", () => ({
   mergeStreamingText: (previousText: string | undefined, nextText: string | undefined) => {
@@ -45,6 +49,7 @@ vi.mock("./streaming-card.js", () => ({
   },
   FeishuStreamingSession: class {
     active = false;
+    nativeThreadId = "omt_streaming_1";
     start = vi.fn(async () => {
       this.active = true;
     });
@@ -53,6 +58,7 @@ vi.mock("./streaming-card.js", () => ({
       this.active = false;
     });
     isActive = vi.fn(() => this.active);
+    getNativeThreadId = vi.fn(() => this.nativeThreadId);
 
     constructor() {
       streamingInstances.push(this);
@@ -71,7 +77,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     resolveFeishuAccountMock.mockReturnValue({
       accountId: "main",
       appId: "app_id",
-      appSecret: "app_secret",
+      appSecret: "app_secret", // pragma: allowlist secret
       domain: "feishu",
       config: {
         renderMode: "auto",
@@ -110,7 +116,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     resolveFeishuAccountMock.mockReturnValue({
       accountId: "main",
       appId: "app_id",
-      appSecret: "app_secret",
+      appSecret: "app_secret", // pragma: allowlist secret
       domain: "feishu",
       config: {
         renderMode: "auto",
@@ -132,7 +138,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     resolveFeishuAccountMock.mockReturnValue({
       accountId: "main",
       appId: "app_id",
-      appSecret: "app_secret",
+      appSecret: "app_secret", // pragma: allowlist secret
       domain: "feishu",
       config: {
         renderMode: "auto",
@@ -375,7 +381,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     resolveFeishuAccountMock.mockReturnValue({
       accountId: "main",
       appId: "app_id",
-      appSecret: "app_secret",
+      appSecret: "app_secret", // pragma: allowlist secret
       domain: "feishu",
       config: {
         renderMode: "card",
@@ -472,6 +478,11 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
   });
 
   it("passes replyInThread to sendMessageFeishu for plain text", async () => {
+    sendMessageFeishuMock.mockResolvedValue({
+      messageId: "om_reply_1",
+      chatId: "oc_chat",
+      nativeThreadId: "omt_thread_1",
+    });
     createFeishuReplyDispatcher({
       cfg: {} as never,
       agentId: "agent",
@@ -490,13 +501,48 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
         replyInThread: true,
       }),
     );
+    expect(recordFeishuNativeThreadBindingMock).toHaveBeenCalledWith({
+      accountId: undefined,
+      chatId: "oc_chat",
+      rootMessageId: "om_msg",
+      nativeThreadId: "omt_thread_1",
+    });
+  });
+
+  it("records thread aliases against the canonical thread root", async () => {
+    sendMessageFeishuMock.mockResolvedValue({
+      messageId: "om_reply_2",
+      chatId: "oc_chat",
+      nativeThreadId: "omt_thread_bound",
+    });
+
+    createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: {} as never,
+      chatId: "oc_chat",
+      replyToMessageId: "om_child_msg",
+      replyInThread: false,
+      threadReply: true,
+      threadConversationId: "oc_chat:thread:om_root_topic",
+    });
+
+    const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+    await options.deliver({ text: "plain text" }, { kind: "final" });
+
+    expect(recordFeishuNativeThreadBindingMock).toHaveBeenCalledWith({
+      accountId: undefined,
+      chatId: "oc_chat",
+      rootMessageId: "om_root_topic",
+      nativeThreadId: "omt_thread_bound",
+    });
   });
 
   it("passes replyInThread to sendMarkdownCardFeishu for card text", async () => {
     resolveFeishuAccountMock.mockReturnValue({
       accountId: "main",
       appId: "app_id",
-      appSecret: "app_secret",
+      appSecret: "app_secret", // pragma: allowlist secret
       domain: "feishu",
       config: {
         renderMode: "card",
@@ -544,7 +590,7 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     });
   });
 
-  it("disables streaming for thread replies and keeps reply metadata", async () => {
+  it("keeps streaming for thread card replies and preserves reply metadata", async () => {
     createFeishuReplyDispatcher({
       cfg: {} as never,
       agentId: "agent",
@@ -559,13 +605,128 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
     await options.deliver({ text: "```ts\nconst x = 1\n```" }, { kind: "final" });
 
+    expect(streamingInstances).toHaveLength(1);
+    expect(streamingInstances[0].start).toHaveBeenCalledWith("oc_chat", "chat_id", {
+      replyToMessageId: "om_msg",
+      replyInThread: true,
+      rootId: "om_root_topic",
+    });
+    expect(sendMarkdownCardFeishuMock).not.toHaveBeenCalled();
+    expect(sendMessageFeishuMock).not.toHaveBeenCalled();
+  });
+
+  it("records native thread ids for streaming thread replies", async () => {
+    createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: { log: vi.fn(), error: vi.fn() } as never,
+      chatId: "oc_chat",
+      replyToMessageId: "om_child_msg",
+      replyInThread: false,
+      threadReply: true,
+      threadConversationId: "oc_chat:thread:om_root_topic",
+    });
+
+    const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+    await options.deliver({ text: "```ts\nconst x = 1\n```" }, { kind: "final" });
+
+    expect(recordFeishuNativeThreadBindingMock).toHaveBeenCalledWith({
+      accountId: undefined,
+      chatId: "oc_chat",
+      rootMessageId: "om_root_topic",
+      nativeThreadId: "omt_streaming_1",
+    });
+  });
+
+  it("buffers thread plain-text block replies until idle", async () => {
+    createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: { log: vi.fn(), error: vi.fn() } as never,
+      chatId: "oc_chat",
+      replyToMessageId: "om_msg",
+      replyInThread: false,
+      threadReply: true,
+      rootId: "om_root_topic",
+    });
+
+    const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+    await options.deliver({ text: "plain " }, { kind: "block" });
+    await options.deliver({ text: "thread text" }, { kind: "block" });
+
+    expect(sendMessageFeishuMock).not.toHaveBeenCalled();
     expect(streamingInstances).toHaveLength(0);
-    expect(sendMarkdownCardFeishuMock).toHaveBeenCalledWith(
+
+    await options.onIdle?.();
+
+    expect(sendMessageFeishuMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageFeishuMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        text: "plain thread text",
         replyToMessageId: "om_msg",
         replyInThread: true,
       }),
     );
+  });
+
+  it("merges buffered thread plain-text blocks into final reply", async () => {
+    createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: { log: vi.fn(), error: vi.fn() } as never,
+      chatId: "oc_chat",
+      replyToMessageId: "om_msg",
+      replyInThread: false,
+      threadReply: true,
+      rootId: "om_root_topic",
+    });
+
+    const options = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+    await options.deliver({ text: "plain " }, { kind: "block" });
+    await options.deliver({ text: "plain thread text" }, { kind: "final" });
+
+    expect(sendMessageFeishuMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageFeishuMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "plain thread text",
+        replyToMessageId: "om_msg",
+        replyInThread: true,
+      }),
+    );
+  });
+
+  it("clears buffered thread text when the final reply switches to a card", async () => {
+    resolveFeishuAccountMock.mockReturnValue({
+      accountId: "main",
+      appId: "app_id",
+      appSecret: "app_secret", // pragma: allowlist secret
+      domain: "feishu",
+      config: {
+        renderMode: "auto",
+        streaming: false,
+      },
+    });
+    sendMessageFeishuMock.mockClear();
+    sendMarkdownCardFeishuMock.mockClear();
+
+    createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: { log: vi.fn(), error: vi.fn() } as never,
+      chatId: "oc_chat",
+      replyToMessageId: "om_msg",
+      replyInThread: false,
+      threadReply: true,
+      rootId: "om_root_topic",
+    });
+
+    const threadOptions = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+    await threadOptions.deliver({ text: "plain " }, { kind: "block" });
+    await threadOptions.deliver({ text: "```md\ncard final\n```" }, { kind: "final" });
+    await threadOptions.onIdle?.();
+
+    expect(sendMarkdownCardFeishuMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageFeishuMock).not.toHaveBeenCalled();
   });
 
   it("passes replyInThread to media attachments", async () => {

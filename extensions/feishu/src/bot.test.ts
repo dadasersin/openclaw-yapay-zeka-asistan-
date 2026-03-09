@@ -5,11 +5,13 @@ import type { FeishuMessageEvent } from "./bot.js";
 import {
   buildBroadcastSessionKey,
   buildFeishuAgentBody,
+  clearFeishuThreadBindingRehydrationStateForTest,
   handleFeishuMessage,
   resolveBroadcastAgents,
   toMessageResourceType,
 } from "./bot.js";
 import { setFeishuRuntime } from "./runtime.js";
+import { stopFeishuThreadBindingManager } from "./thread-bindings.js";
 
 const {
   mockCreateFeishuReplyDispatcher,
@@ -139,6 +141,8 @@ describe("handleFeishuMessage command authorization", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearFeishuThreadBindingRehydrationStateForTest();
+    stopFeishuThreadBindingManager("default");
     mockShouldComputeCommandAuthorized.mockReset().mockReturnValue(true);
     mockResolveAgentRoute.mockReturnValue({
       agentId: "main",
@@ -1705,6 +1709,45 @@ describe("handleFeishuMessage command authorization", () => {
       expect.objectContaining({
         replyInThread: true,
         threadReply: true,
+      }),
+    );
+  });
+
+  it("uses the topic root message id for group topic roots when only thread_id is present", async () => {
+    mockShouldComputeCommandAuthorized.mockReturnValue(false);
+
+    const cfg: ClawdbotConfig = {
+      channels: {
+        feishu: {
+          groups: {
+            "oc-group": {
+              requireMention: false,
+              groupSessionScope: "group",
+            },
+          },
+        },
+      },
+    } as ClawdbotConfig;
+
+    const event: FeishuMessageEvent = {
+      sender: { sender_id: { open_id: "ou-group-topic-root" } },
+      message: {
+        message_id: "om_group_topic_root",
+        chat_id: "oc-group",
+        chat_type: "group",
+        thread_id: "omt_group_topic_1",
+        message_type: "text",
+        content: JSON.stringify({ text: "start topic-bound codex session" }),
+      },
+    };
+
+    await dispatchMessage({ cfg, event });
+
+    expect(mockFinalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        MessageThreadId: "om_group_topic_root",
+        RootMessageId: "om_group_topic_root",
+        NativeChannelId: "oc-group:thread:om_group_topic_root",
       }),
     );
   });
