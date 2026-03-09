@@ -87,7 +87,11 @@ describe("compaction hook wiring", () => {
     hookMocks.runner.hasHooks.mockReturnValue(true);
 
     const ctx = {
-      params: { runId: "r2", session: { messages: [1, 2] } },
+      params: {
+        runId: "r2",
+        sessionKey: "agent:main:web-xyz",
+        session: { messages: [1, 2], sessionFile: "/tmp/session.jsonl" },
+      },
       state: { compactionInFlight: true },
       log: { debug: vi.fn(), warn: vi.fn() },
       maybeResolveCompactionWait: vi.fn(),
@@ -107,13 +111,16 @@ describe("compaction hook wiring", () => {
     expect(hookMocks.runner.runAfterCompaction).toHaveBeenCalledTimes(1);
 
     const afterCalls = hookMocks.runner.runAfterCompaction.mock.calls as unknown as Array<
-      [unknown]
+      [unknown, unknown]
     >;
     const event = afterCalls[0]?.[0] as
-      | { messageCount?: number; compactedCount?: number }
+      | { messageCount?: number; compactedCount?: number; sessionFile?: string }
       | undefined;
     expect(event?.messageCount).toBe(2);
     expect(event?.compactedCount).toBe(1);
+    expect(event?.sessionFile).toBe("/tmp/session.jsonl");
+    const hookCtx = afterCalls[0]?.[1] as { sessionKey?: string } | undefined;
+    expect(hookCtx?.sessionKey).toBe("agent:main:web-xyz");
     expect(ctx.incrementCompactionCount).toHaveBeenCalledTimes(1);
     expect(ctx.maybeResolveCompactionWait).toHaveBeenCalledTimes(1);
     expect(emitAgentEvent).toHaveBeenCalledWith({
