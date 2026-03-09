@@ -73,6 +73,7 @@ export type FeishuThreadBindingManager = {
 const MANAGERS_BY_ACCOUNT_ID = new Map<string, FeishuThreadBindingManager>();
 const BINDINGS_BY_ACCOUNT_CONVERSATION = new Map<string, FeishuThreadBindingRecord>();
 const BINDINGS_BY_ACCOUNT_NATIVE_THREAD = new Map<string, string>();
+const PERSIST_QUEUE_BY_ACCOUNT = new Map<string, Promise<void>>();
 
 function normalizeDurationMs(raw: unknown, fallback: number): number {
   if (typeof raw !== "number" || !Number.isFinite(raw)) {
@@ -409,6 +410,28 @@ async function persistBindingsToDisk(params: {
   await fsPromises.rename(tempPath, filePath);
 }
 
+function queuePersistBindingsToDisk(params: {
+  accountId: string;
+  persist: boolean;
+}): Promise<void> {
+  if (!params.persist) {
+    return Promise.resolve();
+  }
+  const previous = PERSIST_QUEUE_BY_ACCOUNT.get(params.accountId) ?? Promise.resolve();
+  const queued = previous.catch(() => {}).then(() => persistBindingsToDisk(params));
+  const tracked = queued
+    .catch((err) => {
+      console.warn(`feishu thread bindings persist failed (${params.accountId}): ${String(err)}`);
+    })
+    .finally(() => {
+      if (PERSIST_QUEUE_BY_ACCOUNT.get(params.accountId) === tracked) {
+        PERSIST_QUEUE_BY_ACCOUNT.delete(params.accountId);
+      }
+    });
+  PERSIST_QUEUE_BY_ACCOUNT.set(params.accountId, tracked);
+  return tracked;
+}
+
 function resolveConversationIdFromBindingId(params: {
   accountId: string;
   bindingId?: string;
@@ -568,7 +591,7 @@ export function createFeishuThreadBindingManager(
         nativeThreadId: normalizedNativeThreadId,
       };
       upsertBindingRecord(nextRecord);
-      void persistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
+      void queuePersistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
       return nextRecord;
     },
     touchConversation: (conversationIdRaw, at) => {
@@ -586,7 +609,7 @@ export function createFeishuThreadBindingManager(
         lastActivityAt: normalizeTimestampMs(at ?? Date.now()),
       };
       upsertBindingRecord(nextRecord);
-      void persistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
+      void queuePersistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
       return nextRecord;
     },
     unbindConversation: ({ conversationId }) => {
@@ -603,7 +626,7 @@ export function createFeishuThreadBindingManager(
         return null;
       }
       removeBindingRecord(removed);
-      void persistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
+      void queuePersistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
       return removed;
     },
     unbindBySessionKey: ({ targetSessionKey }) => {
@@ -620,7 +643,7 @@ export function createFeishuThreadBindingManager(
         removed.push(entry);
       }
       if (removed.length > 0) {
-        void persistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
+        void queuePersistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
       }
       return removed;
     },
@@ -687,7 +710,7 @@ export function createFeishuThreadBindingManager(
         },
       });
       upsertBindingRecord(record);
-      void persistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
+      void queuePersistBindingsToDisk({ accountId, persist: manager.shouldPersistMutations() });
       return toSessionBindingRecord(record, {
         idleTimeoutMs,
         maxAgeMs,
@@ -899,6 +922,12 @@ export function resolveFeishuThreadBindingByNativeThread(params: {
 }
 
 export const __testing = {
+  flushPersistQueueForTests(accountId?: string) {
+    if (accountId) {
+      return PERSIST_QUEUE_BY_ACCOUNT.get(accountId) ?? Promise.resolve();
+    }
+    return Promise.allSettled([...PERSIST_QUEUE_BY_ACCOUNT.values()]).then(() => undefined);
+  },
   resetFeishuThreadBindingsForTests() {
     for (const manager of MANAGERS_BY_ACCOUNT_ID.values()) {
       manager.stop();
@@ -906,5 +935,6 @@ export const __testing = {
     MANAGERS_BY_ACCOUNT_ID.clear();
     BINDINGS_BY_ACCOUNT_CONVERSATION.clear();
     BINDINGS_BY_ACCOUNT_NATIVE_THREAD.clear();
+    PERSIST_QUEUE_BY_ACCOUNT.clear();
   },
 };

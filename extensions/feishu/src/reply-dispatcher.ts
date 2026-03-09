@@ -406,7 +406,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
 
           const resolvedText =
             threadReplyMode && !useCard ? mergeStreamingText(bufferedThreadText, text) : text;
-          if (threadReplyMode && !useCard) {
+          if (threadReplyMode && (!useCard || info?.kind === "final")) {
             bufferedThreadText = "";
           }
           await sendRenderedText(resolvedText, useCard);

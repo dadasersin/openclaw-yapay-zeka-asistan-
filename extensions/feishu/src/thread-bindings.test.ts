@@ -261,6 +261,81 @@ describe("feishu thread bindings", () => {
     }
   });
 
+  it("serializes persisted binding writes per account", async () => {
+    const homeDir = await fsMkdtemp();
+    const previousHome = process.env.HOME;
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.HOME = homeDir;
+    process.env.OPENCLAW_STATE_DIR = path.join(homeDir, ".openclaw");
+    try {
+      const manager = createFeishuThreadBindingManager({
+        accountId: "work",
+        persist: true,
+        enableSweeper: false,
+      });
+
+      await getSessionBindingService().bind({
+        targetSessionKey: "agent:codex:acp:serial",
+        targetKind: "session",
+        conversation: {
+          channel: "feishu",
+          accountId: "work",
+          conversationId: "oc_chat_serial:thread:om_root_serial",
+        },
+        placement: "current",
+      });
+      await __testing.flushPersistQueueForTests("work");
+
+      const originalWriteFile = fsPromises.writeFile.bind(fsPromises);
+      let releaseFirstWrite: (() => void) | undefined;
+      let writeCount = 0;
+      const writeSpy = vi.spyOn(fsPromises, "writeFile").mockImplementation(async (...args) => {
+        writeCount += 1;
+        if (writeCount === 1) {
+          await new Promise<void>((resolve) => {
+            releaseFirstWrite = resolve;
+          });
+        }
+        return originalWriteFile(...args);
+      });
+
+      try {
+        manager.touchConversation("oc_chat_serial:thread:om_root_serial", 2);
+        manager.unbindConversation({
+          conversationId: "oc_chat_serial:thread:om_root_serial",
+        });
+
+        await vi.waitFor(() => {
+          expect(writeSpy).toHaveBeenCalledTimes(1);
+        });
+        expect(releaseFirstWrite).toBeTypeOf("function");
+        const unblockFirstWrite = releaseFirstWrite;
+        if (!unblockFirstWrite) {
+          throw new Error("expected first persist write to be blocked");
+        }
+        unblockFirstWrite();
+        await __testing.flushPersistQueueForTests("work");
+
+        expect(writeSpy).toHaveBeenCalledTimes(2);
+        const bindingsPath = path.join(
+          process.env.OPENCLAW_STATE_DIR,
+          "feishu",
+          "thread-bindings-work.json",
+        );
+        const payload = JSON.parse(await fsPromises.readFile(bindingsPath, "utf-8")) as {
+          bindings: unknown[];
+        };
+        expect(payload.bindings).toEqual([]);
+      } finally {
+        writeSpy.mockRestore();
+      }
+    } finally {
+      process.env.HOME = previousHome;
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      __testing.resetFeishuThreadBindingsForTests();
+    }
+  });
+
   it("ensures the adapter from config when Feishu thread bindings are enabled", () => {
     const cfg: ClawdbotConfig = {
       session: {

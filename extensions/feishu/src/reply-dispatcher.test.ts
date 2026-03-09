@@ -695,6 +695,40 @@ describe("createFeishuReplyDispatcher streaming behavior", () => {
     );
   });
 
+  it("clears buffered thread text when the final reply switches to a card", async () => {
+    resolveFeishuAccountMock.mockReturnValue({
+      accountId: "main",
+      appId: "app_id",
+      appSecret: "app_secret", // pragma: allowlist secret
+      domain: "feishu",
+      config: {
+        renderMode: "auto",
+        streaming: false,
+      },
+    });
+    sendMessageFeishuMock.mockClear();
+    sendMarkdownCardFeishuMock.mockClear();
+
+    createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: { log: vi.fn(), error: vi.fn() } as never,
+      chatId: "oc_chat",
+      replyToMessageId: "om_msg",
+      replyInThread: false,
+      threadReply: true,
+      rootId: "om_root_topic",
+    });
+
+    const threadOptions = createReplyDispatcherWithTypingMock.mock.calls[0]?.[0];
+    await threadOptions.deliver({ text: "plain " }, { kind: "block" });
+    await threadOptions.deliver({ text: "```md\ncard final\n```" }, { kind: "final" });
+    await threadOptions.onIdle?.();
+
+    expect(sendMarkdownCardFeishuMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageFeishuMock).not.toHaveBeenCalled();
+  });
+
   it("passes replyInThread to media attachments", async () => {
     createFeishuReplyDispatcher({
       cfg: {} as never,
