@@ -13,11 +13,34 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Pause before exiting on error so users can read the message.
+# Guards: not a CI environment, running in a real ConsoleHost, and stdin/stdout
+# are not redirected (piped). The try/catch ensures Read-Host errors never
+# mask the original failure that brought us here.
+function Wait-BeforeExit {
+    try {
+        $isCI = (Test-Path env:CI) -or (Test-Path env:GITHUB_ACTIONS) -or
+                (Test-Path env:TF_BUILD) -or (Test-Path env:BUILD_BUILDID)
+        # [Console]::IsInputRedirected can throw on systems without a real
+        # console handle (services, scheduled tasks), so keep it inside
+        # the try/catch to avoid masking the original failure.
+        $canPrompt = ($Host.Name -eq 'ConsoleHost') -and
+                     -not [Console]::IsInputRedirected -and
+                     -not [Console]::IsOutputRedirected
+        if (-not $isCI -and $canPrompt) {
+            Microsoft.PowerShell.Utility\Write-Host ""
+            [void](Read-Host 'Press Enter to close this window')
+        }
+    } catch {
+        # silently skip — never obscure the original error
+    }
+}
+
 # Colors
 $ACCENT = "`e[38;2;255;77;77m"    # coral-bright
 $SUCCESS = "`e[38;2;0;229;204m"    # cyan-bright
 $WARN = "`e[38;2;255;176;32m"     # amber
-$ERROR = "`e[38;2;230;57;70m"     # coral-mid
+$CLR_ERROR = "`e[38;2;230;57;70m"   # coral-mid (avoid $ERROR — collides with PS read-only $Error)
 $MUTED = "`e[38;2;90;100;128m"    # text-muted
 $NC = "`e[0m"                     # No Color
 
@@ -26,10 +49,10 @@ function Write-Host {
     $msg = switch ($Level) {
         "success" { "$SUCCESS✓$NC $Message" }
         "warn" { "$WARN!$NC $Message" }
-        "error" { "$ERROR✗$NC $Message" }
+        "error" { "$CLR_ERROR✗$NC $Message" }
         default { "$MUTED·$NC $Message" }
     }
-    Microsoft.PowerShell.Host\Write-Host $msg
+    Microsoft.PowerShell.Utility\Write-Host $msg
 }
 
 function Write-Banner {
@@ -107,7 +130,7 @@ function Install-Node {
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         Write-Host "  Using winget..." -Level info
         try {
-            winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements 2>&1 | Out-Host
             # Refresh PATH
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
             Write-Host "  Node.js installed via winget" -Level success
@@ -121,7 +144,7 @@ function Install-Node {
     if (Get-Command choco -ErrorAction SilentlyContinue) {
         Write-Host "  Using chocolatey..." -Level info
         try {
-            choco install nodejs-lts -y 2>&1 | Out-Null
+            choco install nodejs-lts -y 2>&1 | Out-Host
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
             Write-Host "  Node.js installed via chocolatey" -Level success
             return $true
@@ -134,7 +157,7 @@ function Install-Node {
     if (Get-Command scoop -ErrorAction SilentlyContinue) {
         Write-Host "  Using scoop..." -Level info
         try {
-            scoop install nodejs-lts 2>&1 | Out-Null
+            scoop install nodejs-lts 2>&1 | Out-Host
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
             Write-Host "  Node.js installed via scoop" -Level success
             return $true
@@ -177,7 +200,7 @@ function Install-Git {
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         Write-Host "  Installing Git via winget..." -Level info
         try {
-            winget install Git.Git --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+            winget install Git.Git --accept-package-agreements --accept-source-agreements 2>&1 | Out-Host
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
             Write-Host "  Git installed" -Level success
             return $true
@@ -205,8 +228,15 @@ function Install-OpenClawNpm {
     Write-Host "Installing OpenClaw (openclaw@$Version)..." -Level info
     
     try {
-        # Use -ExecutionPolicy Bypass to handle restricted execution policy
-        npm install -g openclaw@$Version --no-fund --no-audit 2>&1
+        npm install -g openclaw@$Version --no-fund --no-audit 2>&1 | Out-Host
+        # npm is a native command — non-zero exit codes don't throw in
+        # PowerShell, so check $LASTEXITCODE explicitly.
+        # Out-Host sends output to the console (so users can read errors)
+        # while keeping it off the pipeline (prevents return-value pollution).
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "npm install failed (exit code $LASTEXITCODE)" -Level error
+            return $false
+        }
         Write-Host "OpenClaw installed" -Level success
         return $true
     } catch {
@@ -217,30 +247,50 @@ function Install-OpenClawNpm {
 
 function Install-OpenClawGit {
     param([string]$RepoDir, [switch]$Update)
-    
+
     Write-Host "Installing OpenClaw from git..." -Level info
-    
+
     if (!(Test-Path $RepoDir)) {
         Write-Host "  Cloning repository..." -Level info
-        git clone https://github.com/openclaw/openclaw.git $RepoDir 2>&1
+        git clone -- https://github.com/openclaw/openclaw.git "$RepoDir" 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "git clone failed (exit code $LASTEXITCODE)" -Level error
+            return $false
+        }
     } elseif ($Update) {
         Write-Host "  Updating repository..." -Level info
-        git -C $RepoDir pull --rebase 2>&1
+        git -C "$RepoDir" pull --rebase 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "git pull failed (exit code $LASTEXITCODE)" -Level error
+            return $false
+        }
     }
-    
+
     # Install pnpm if not present
     if (!(Get-Command pnpm -ErrorAction SilentlyContinue)) {
         Write-Host "  Installing pnpm..." -Level info
-        npm install -g pnpm 2>&1
+        npm install -g pnpm 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "pnpm install failed (exit code $LASTEXITCODE)" -Level error
+            return $false
+        }
     }
-    
+
     # Install dependencies
     Write-Host "  Installing dependencies..." -Level info
-    pnpm install --dir $RepoDir 2>&1
-    
+    pnpm install --dir $RepoDir 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "pnpm install failed (exit code $LASTEXITCODE)" -Level error
+        return $false
+    }
+
     # Build
     Write-Host "  Building..." -Level info
-    pnpm --dir $RepoDir build 2>&1
+    pnpm --dir $RepoDir build 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "build failed (exit code $LASTEXITCODE)" -Level error
+        return $false
+    }
     
     # Create wrapper
     $wrapperDir = "$env:USERPROFILE\.local\bin"
@@ -277,33 +327,40 @@ function Main {
     if (!(Ensure-ExecutionPolicy)) {
         Write-Host ""
         Write-Host "Installation cannot continue due to execution policy restrictions" -Level error
+        Wait-BeforeExit
         exit 1
     }
     
     if (!(Ensure-Node)) {
+        Wait-BeforeExit
         exit 1
     }
     
     if ($InstallMethod -eq "git") {
         if (!(Ensure-Git)) {
+            Wait-BeforeExit
             exit 1
         }
         
         if ($DryRun) {
             Write-Host "[DRY RUN] Would install OpenClaw from git to $GitDir" -Level info
         } else {
-            Install-OpenClawGit -RepoDir $GitDir -Update:(-not $NoGitUpdate)
+            if (!(Install-OpenClawGit -RepoDir $GitDir -Update:(-not $NoGitUpdate))) {
+                Wait-BeforeExit
+                exit 1
+            }
         }
     } else {
         # npm method
         if (!(Ensure-Git)) {
-            Write-Host "Git is required for npm installs. Please install Git and try again." -Level warn
+            Write-Host "Git not found. OpenClaw will install via npm, but Git is recommended for updates." -Level warn
         }
         
         if ($DryRun) {
             Write-Host "[DRY RUN] Would install OpenClaw via npm (tag: $Tag)" -Level info
         } else {
             if (!(Install-OpenClawNpm -Version $Tag)) {
+                Wait-BeforeExit
                 exit 1
             }
         }
@@ -326,4 +383,11 @@ function Main {
     Write-Host "🦞 OpenClaw installed successfully!" -Level success
 }
 
-Main
+try {
+    Main
+} catch {
+    Microsoft.PowerShell.Utility\Write-Host ""
+    Microsoft.PowerShell.Utility\Write-Host "$CLR_ERROR✗$NC Installation failed: $_"
+    Wait-BeforeExit
+    exit 1
+}

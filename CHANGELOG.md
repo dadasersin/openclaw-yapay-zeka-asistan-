@@ -463,6 +463,7 @@ Docs: https://docs.openclaw.ai
 - Control UI/Telegram sender labels: preserve inbound sender labels in sanitized chat history so dashboard user-message groups split correctly and show real group-member names instead of `You`. (#39414) Thanks @obviyus.
 - Agents/failover 402 recovery: keep temporary spend-limit `402` payloads retryable, preserve explicit insufficient-credit billing detection even in long provider payloads, and allow throttled billing-cooldown probes so single-provider setups can recover instead of staying locked out. (#38533) Thanks @xialonglee.
 - Browser/config schema: accept `browser.profiles.*.driver: "openclaw"` while preserving legacy `"clawd"` compatibility in validated config. (#39374; based on #35621) Thanks @gambletan and @ingyukoh.
+- Install/Windows PowerShell: keep the installer window open on failure so users can read error messages, check `$LASTEXITCODE` after native commands (`npm`, `git`, `pnpm`) to detect silent failures, rename `$ERROR` to `$CLR_ERROR` to avoid collision with PowerShell's automatic `$Error` variable, and fix the `Write-Host` module qualifier. (#38634) Thanks @ademczuk.
 
 ## 2026.3.2
 
