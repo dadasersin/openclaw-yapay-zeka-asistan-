@@ -29,6 +29,12 @@ describe("onboard rescue helpers", () => {
     expect(resolveRescueGatewayPort(18_789)).toBe(19_789);
   });
 
+  it("rejects invalid monitored profile names before deriving rescue paths", () => {
+    expect(() => resolveRescueProfileName("../work")).toThrow(
+      'Invalid monitored profile "../work" (use letters, numbers, "_" or "-" only).',
+    );
+  });
+
   it("builds a rescue prompt that targets the monitored profile", () => {
     const prompt = buildRescueWatchdogPrompt("default");
     expect(prompt).toContain("openclaw --profile default gateway status --json");

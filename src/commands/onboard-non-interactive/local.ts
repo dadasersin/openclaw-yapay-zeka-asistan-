@@ -148,8 +148,10 @@ export async function runNonInteractiveOnboardingLocal(params: {
   }
 
   const daemonRuntimeRaw = opts.daemonRuntime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME;
-  const rescueWatchdog = rescuePlan.rescueWatchdogEnabled
-    ? await setupRescueWatchdog({
+  let rescueWatchdog;
+  if (rescuePlan.rescueWatchdogEnabled) {
+    try {
+      rescueWatchdog = await setupRescueWatchdog({
         sourceConfig: nextConfig,
         workspaceDir,
         mainPort: gatewayResult.port,
@@ -158,13 +160,15 @@ export async function runNonInteractiveOnboardingLocal(params: {
         output: {
           log: runtime.log,
         },
-      }).catch((error) => {
-        runtime.error(
-          error instanceof Error ? `Rescue watchdog setup failed: ${error.message}` : String(error),
-        );
-        return undefined;
-      })
-    : undefined;
+      });
+    } catch (error) {
+      runtime.error(
+        error instanceof Error ? `Rescue watchdog setup failed: ${error.message}` : String(error),
+      );
+      runtime.exit(1);
+      return;
+    }
+  }
   if (!opts.skipHealth) {
     const { healthCommand } = await import("../health.js");
     const links = resolveControlUiLinks({

@@ -81,6 +81,7 @@ import { setupRescueWatchdog } from "./onboard-rescue.js";
 describe("setupRescueWatchdog", () => {
   const previousEnv = {
     HOME: process.env.HOME,
+    HTTP_PROXY: process.env.HTTP_PROXY,
     OPENCLAW_CONFIG_PATH: process.env.OPENCLAW_CONFIG_PATH,
     OPENCLAW_GATEWAY_PORT: process.env.OPENCLAW_GATEWAY_PORT,
     OPENCLAW_PROFILE: process.env.OPENCLAW_PROFILE,
@@ -129,6 +130,7 @@ describe("setupRescueWatchdog", () => {
     const mainWorkspace = path.join(tempHome, "workspace-work");
 
     process.env.HOME = tempHome;
+    process.env.HTTP_PROXY = "http://proxy.internal:8080";
     process.env.OPENCLAW_TEST_FAST = "1";
     process.env.OPENCLAW_PROFILE = "work";
     process.env.OPENCLAW_STATE_DIR = mainStateDir;
@@ -187,10 +189,21 @@ describe("setupRescueWatchdog", () => {
           OPENCLAW_PROFILE: "work-rescue",
           OPENCLAW_STATE_DIR: rescueStateDir,
           OPENCLAW_CONFIG_PATH: rescueConfigPath,
+          HOME: tempHome,
         }),
         port: 19_789,
       }),
     );
+    const rescuePlanCall = (buildGatewayInstallPlan.mock.calls as unknown[][]).at(0);
+    const gatewayInstallCall = (gatewayInstall.mock.calls as unknown[][]).at(0);
+    const rescuePlanArgs = rescuePlanCall?.[0] as
+      | { env?: Record<string, string | undefined> }
+      | undefined;
+    const gatewayInstallArgs = gatewayInstallCall?.[0] as
+      | { env?: Record<string, string | undefined> }
+      | undefined;
+    expect(rescuePlanArgs?.env).not.toHaveProperty("HTTP_PROXY");
+    expect(gatewayInstallArgs?.env).not.toHaveProperty("HTTP_PROXY");
 
     const mainConfig = JSON.parse(await fs.readFile(mainConfigPath, "utf8")) as {
       wizard?: { marker?: string };

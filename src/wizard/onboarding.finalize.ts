@@ -155,7 +155,9 @@ export async function finalizeOnboardingWizard(
   }
 
   let daemonRuntime = opts.daemonRuntime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME;
+  let primaryManagedServiceReady = !installDaemon;
   if (installDaemon) {
+    primaryManagedServiceReady = true;
     daemonRuntime =
       flow === "quickstart"
         ? DEFAULT_GATEWAY_DAEMON_RUNTIME
@@ -251,6 +253,7 @@ export async function finalizeOnboardingWizard(
         );
       }
       if (installError) {
+        primaryManagedServiceReady = false;
         await prompter.note(`Gateway service install failed: ${installError}`, "Gateway");
         await prompter.note(gatewayInstallErrorHint(), "Gateway");
       }
@@ -285,7 +288,12 @@ export async function finalizeOnboardingWizard(
     }
   }
 
-  if (rescueWatchdogEnabled) {
+  if (rescueWatchdogEnabled && !primaryManagedServiceReady) {
+    await prompter.note(
+      "Rescue watchdog requires a healthy primary managed service. Gateway service install failed during onboarding, so rescue watchdog was skipped.",
+      "Rescue watchdog",
+    );
+  } else if (rescueWatchdogEnabled) {
     try {
       await setupRescueWatchdog({
         sourceConfig: nextConfig,

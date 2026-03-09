@@ -3,6 +3,7 @@ import path from "node:path";
 import { ensureAuthProfileStore, saveAuthProfileStore } from "../agents/auth-profiles.js";
 import { ensureAgentWorkspace } from "../agents/workspace.js";
 import { formatCliCommand } from "../cli/command-format.js";
+import { isValidProfileName } from "../cli/profile-utils.js";
 import { applyCliProfileEnv } from "../cli/profile.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { createConfigIO } from "../config/io.js";
@@ -21,6 +22,35 @@ const RESCUE_JOB_NAME_PREFIX = "Rescue watchdog";
 const RESCUE_PROFILE_SUFFIX = "-rescue";
 const DEFAULT_RESCUE_INTERVAL_MS = 5 * 60_000;
 const RESCUE_AGENT_TIMEOUT_SECONDS = 120;
+const RESCUE_ENV_ALLOWLIST = [
+  "APPDATA",
+  "ASDF_DATA_DIR",
+  "BUN_INSTALL",
+  "COMSPEC",
+  "FNM_DIR",
+  "HOME",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "NPM_CONFIG_PREFIX",
+  "OPENCLAW_HOME",
+  "PATH",
+  "PATHEXT",
+  "PNPM_HOME",
+  "ProgramData",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "SystemRoot",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "USERPROFILE",
+  "VOLTA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_STATE_HOME",
+] as const;
 
 type RescueCronListResponse = {
   jobs?: Array<{ id?: string; name?: string }>;
@@ -44,13 +74,23 @@ export function resolveMonitoredProfileName(raw = process.env.OPENCLAW_PROFILE):
   return trimmed;
 }
 
+function assertValidMonitoredProfileName(raw?: string): string {
+  const monitoredProfile = resolveMonitoredProfileName(raw);
+  if (monitoredProfile !== "default" && !isValidProfileName(monitoredProfile)) {
+    throw new Error(
+      `Invalid monitored profile "${monitoredProfile}" (use letters, numbers, "_" or "-" only).`,
+    );
+  }
+  return monitoredProfile;
+}
+
 export function canEnableRescueWatchdog(monitoredProfile: string): boolean {
   const normalized = resolveMonitoredProfileName(monitoredProfile).toLowerCase();
   return normalized !== "rescue" && !normalized.endsWith(RESCUE_PROFILE_SUFFIX);
 }
 
 export function resolveRescueProfileName(monitoredProfile: string): string {
-  const normalized = resolveMonitoredProfileName(monitoredProfile);
+  const normalized = assertValidMonitoredProfileName(monitoredProfile);
   if (normalized === "default") {
     return "rescue";
   }
@@ -215,11 +255,13 @@ async function loadExistingRescueConfig(
 }
 
 function buildRescueEnv(profile: string): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env.OPENCLAW_PROFILE;
-  delete env.OPENCLAW_STATE_DIR;
-  delete env.OPENCLAW_CONFIG_PATH;
-  delete env.OPENCLAW_GATEWAY_PORT;
+  const env: Record<string, string | undefined> = {};
+  for (const key of RESCUE_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.length > 0) {
+      env[key] = value;
+    }
+  }
   applyCliProfileEnv({ profile, env });
   return env as NodeJS.ProcessEnv;
 }
@@ -329,7 +371,7 @@ export async function setupRescueWatchdog(params: {
     note?: (message: string, title?: string) => Promise<void>;
   };
 }): Promise<RescueWatchdogSetupResult> {
-  const monitoredProfile = resolveMonitoredProfileName(params.monitoredProfile);
+  const monitoredProfile = assertValidMonitoredProfileName(params.monitoredProfile);
   if (!canEnableRescueWatchdog(monitoredProfile)) {
     throw new Error(
       `Rescue watchdog is not supported while onboarding the "${monitoredProfile}" profile.`,

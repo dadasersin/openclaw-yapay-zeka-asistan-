@@ -317,6 +317,59 @@ describe("finalizeOnboardingWizard", () => {
     );
   });
 
+  it("skips rescue watchdog when the primary managed service install fails", async () => {
+    gatewayServiceInstall.mockRejectedValueOnce(new Error("boom"));
+    const note = vi.fn(async () => {});
+    const prompter = buildWizardPrompter({
+      select: vi.fn(async (params: { message: string }) => {
+        if (params.message === "Gateway service runtime") {
+          return "node";
+        }
+        return "later";
+      }) as never,
+      confirm: vi.fn(async () => false),
+      note: note as never,
+    });
+
+    await finalizeOnboardingWizard({
+      flow: "advanced",
+      opts: {
+        acceptRisk: true,
+        authChoice: "skip",
+        installDaemon: false,
+        rescueWatchdog: true,
+        skipHealth: true,
+        skipUi: true,
+      },
+      baseConfig: {},
+      nextConfig: {
+        gateway: {
+          auth: {
+            mode: "token",
+            token: "session-token",
+          },
+        },
+      },
+      workspaceDir: "/tmp",
+      settings: {
+        port: 18789,
+        bind: "loopback",
+        authMode: "token",
+        gatewayToken: "session-token",
+        tailscaleMode: "off",
+        tailscaleResetOnExit: false,
+      },
+      prompter,
+      runtime: createRuntime(),
+    });
+
+    expect(setupRescueWatchdog).not.toHaveBeenCalled();
+    expect(note).toHaveBeenCalledWith(
+      "Rescue watchdog requires a healthy primary managed service. Gateway service install failed during onboarding, so rescue watchdog was skipped.",
+      "Rescue watchdog",
+    );
+  });
+
   it("prompts for rescue watchdog when the flag is not explicitly provided", async () => {
     const confirm = vi.fn(async (params: { message: string }) => {
       if (params.message.includes("Enable rescue watchdog")) {
