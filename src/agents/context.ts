@@ -20,12 +20,28 @@ type AgentModelEntry = { params?: Record<string, unknown> };
 
 const ANTHROPIC_1M_MODEL_PREFIXES = ["claude-opus-4", "claude-sonnet-4"] as const;
 export const ANTHROPIC_CONTEXT_1M_TOKENS = 1_048_576;
+
+function normalizeModelId(modelId: string): string {
+  return modelId.toLowerCase().trim();
+}
+
+function getBareModelId(modelId: string): string {
+  const normalized = normalizeModelId(modelId);
+  const slashIndex = normalized.indexOf("/");
+  if (slashIndex >= 0) {
+    return normalized.slice(slashIndex + 1);
+  }
+  return normalized;
+}
+
 const CONFIG_LOAD_RETRY_POLICY: BackoffPolicy = {
   initialMs: 1_000,
   maxMs: 60_000,
   factor: 2,
   jitter: 0,
 };
+
+const CONFIG_DERIVED_KEYS = new Set<string>();
 
 export function applyDiscoveredContextWindows(params: {
   cache: Map<string, number>;
@@ -40,11 +56,29 @@ export function applyDiscoveredContextWindows(params: {
     if (!contextWindow || contextWindow <= 0) {
       continue;
     }
-    const existing = params.cache.get(model.id);
-    // When multiple providers expose the same model id with different limits,
-    // prefer the smaller window so token budgeting is fail-safe (no overestimation).
-    if (existing === undefined || contextWindow < existing) {
-      params.cache.set(model.id, contextWindow);
+
+    const provider = (model as any).provider;
+    const normalizedModelId = normalizeModelId(model.id);
+    const bareModelId = getBareModelId(model.id);
+
+    // 1. Scoped lookup (highest precedence)
+    if (provider) {
+      const scopedKey = `${provider.toLowerCase().trim()}::${bareModelId}`;
+      if (!CONFIG_DERIVED_KEYS.has(scopedKey)) {
+        const existingScoped = params.cache.get(scopedKey);
+        if (existingScoped === undefined || contextWindow < existingScoped) {
+          params.cache.set(scopedKey, contextWindow);
+        }
+      }
+    }
+
+    // 2. Bare modelId lookup (legacy/fallback precedence)
+    if (!CONFIG_DERIVED_KEYS.has(bareModelId)) {
+      const existingBare = params.cache.get(bareModelId);
+      // For the global bare-id cache, prefer the largest window to avoid proxy poisoning (V4.2)
+      if (existingBare === undefined || contextWindow > existingBare) {
+        params.cache.set(bareModelId, contextWindow);
+      }
     }
   }
 }
@@ -57,7 +91,7 @@ export function applyConfiguredContextWindows(params: {
   if (!providers || typeof providers !== "object") {
     return;
   }
-  for (const provider of Object.values(providers)) {
+  for (const [providerId, provider] of Object.entries(providers)) {
     if (!Array.isArray(provider?.models)) {
       continue;
     }
@@ -68,7 +102,19 @@ export function applyConfiguredContextWindows(params: {
       if (!modelId || !contextWindow || contextWindow <= 0) {
         continue;
       }
-      params.cache.set(modelId, contextWindow);
+
+      const normalizedProvider = providerId.toLowerCase().trim();
+      const normalizedModelId = normalizeModelId(modelId);
+      const bareModelId = getBareModelId(modelId);
+
+      // Set scoped key (Config overrides discovery)
+      const scopedKey = `${normalizedProvider}::${bareModelId}`;
+      params.cache.set(scopedKey, contextWindow);
+      CONFIG_DERIVED_KEYS.add(scopedKey);
+
+      // Set bare key (Config overrides discovery)
+      params.cache.set(bareModelId, contextWindow);
+      CONFIG_DERIVED_KEYS.add(bareModelId);
     }
   }
 }
@@ -178,13 +224,26 @@ function ensureContextWindowCacheLoaded(): Promise<void> {
   return loadPromise;
 }
 
-export function lookupContextTokens(modelId?: string): number | undefined {
+export function lookupContextTokens(modelId?: string, provider?: string): number | undefined {
   if (!modelId) {
     return undefined;
   }
   // Best-effort: kick off loading, but don't block.
   void ensureContextWindowCacheLoaded();
-  return MODEL_CACHE.get(modelId);
+
+  const normalizedModelId = normalizeModelId(modelId);
+
+  if (provider) {
+    const scopedKey = `${provider.toLowerCase().trim()}::${getBareModelId(normalizedModelId)}`;
+    const scopedLimit = MODEL_CACHE.get(scopedKey);
+    if (scopedLimit !== undefined) {
+      return scopedLimit;
+    }
+  }
+
+  // Fallback to legacy behavior where we check for a bare modelId match.
+  const bareModelId = getBareModelId(normalizedModelId);
+  return MODEL_CACHE.get(bareModelId);
 }
 
 if (!shouldSkipEagerContextWindowWarmup()) {
@@ -222,7 +281,7 @@ function resolveProviderModelRef(params: {
   }
   const providerRaw = params.provider?.trim();
   if (providerRaw) {
-    return { provider: providerRaw.toLowerCase(), model: modelRaw };
+    return { provider: providerRaw.toLowerCase(), model: normalizeModelId(modelRaw) };
   }
   const slash = modelRaw.indexOf("/");
   if (slash <= 0) {
@@ -233,7 +292,7 @@ function resolveProviderModelRef(params: {
   if (!provider || !model) {
     return undefined;
   }
-  return { provider, model };
+  return { provider, model: normalizeModelId(model) };
 }
 
 function isAnthropic1MModel(provider: string, model: string): boolean {
@@ -269,5 +328,5 @@ export function resolveContextTokensForModel(params: {
     }
   }
 
-  return lookupContextTokens(params.model) ?? params.fallbackContextTokens;
+  return lookupContextTokens(params.model, params.provider) ?? params.fallbackContextTokens;
 }
