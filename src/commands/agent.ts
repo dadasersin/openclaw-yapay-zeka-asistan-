@@ -37,7 +37,7 @@ import {
   resolveThinkingDefault,
 } from "../agents/model-selection.js";
 import { prepareSessionManagerForRun } from "../agents/pi-embedded-runner/session-manager-init.js";
-import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
+import { createAdaptiveEmbeddedRunner, runEmbeddedPiAgent } from "../agents/pi-embedded.js";
 import { buildWorkspaceSkillSnapshot } from "../agents/skills.js";
 import { getSkillsSnapshotVersion } from "../agents/skills/refresh.js";
 import { normalizeSpawnedRunMetadata } from "../agents/spawned-context.js";
@@ -343,6 +343,10 @@ function runAgentAttempt(params: {
   primaryProvider: string;
   sessionStore?: Record<string, SessionEntry>;
   storePath?: string;
+  /** True when the user has an explicit per-session or API model override (not just config default). */
+  hasExplicitModelOverride: boolean;
+  /** Stateful runner from createAdaptiveEmbeddedRunner() for this fallback chain. */
+  runAgent: ReturnType<typeof createAdaptiveEmbeddedRunner>;
   allowTransientCooldownProbe?: boolean;
 }) {
   const effectivePrompt = resolveFallbackRetryPrompt({
@@ -495,6 +499,7 @@ function runAgentAttempt(params: {
     streamParams: params.opts.streamParams,
     agentDir: params.agentDir,
     allowTransientCooldownProbe: params.allowTransientCooldownProbe,
+    _hasExplicitModelOverride: params.hasExplicitModelOverride,
     onAgentEvent: params.onAgentEvent,
     bootstrapPromptWarningSignaturesSeen,
     bootstrapPromptWarningSignature,
@@ -1103,7 +1108,9 @@ async function agentCommandInternal(
       // state so retries within this runWithModelFallback chain skip re-running the
       // local model if cloud escalation already occurred.
       const runAgent = createAdaptiveEmbeddedRunner();
-      const fallbackResult = await runWithModelFallback({
+      const fallbackResult = await runWithModelFallback<
+        Awaited<ReturnType<typeof runEmbeddedPiAgent>>
+      >({
         cfg,
         provider,
         model,
@@ -1137,6 +1144,8 @@ async function agentCommandInternal(
             primaryProvider: provider,
             sessionStore,
             storePath,
+            hasExplicitModelOverride: hasStoredOverride,
+            runAgent,
             allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
             onAgentEvent: (evt) => {
               // Track lifecycle end for fallback emission below.

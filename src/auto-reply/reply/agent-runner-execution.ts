@@ -325,7 +325,7 @@ export async function runAgentTurnWithFallback(params: {
             allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
           });
           return (async () => {
-            const result = await runEmbeddedPiAgent({
+            const result = await runAgent({
               ...embeddedContext,
               trigger: params.isHeartbeat ? "heartbeat" : "user",
               groupId: resolveGroupSessionKey(params.sessionCtx)?.id,

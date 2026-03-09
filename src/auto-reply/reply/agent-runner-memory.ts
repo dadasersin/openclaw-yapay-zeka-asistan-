@@ -490,7 +490,7 @@ export async function runMemoryFlushIfNeeded(params: {
           authProfile,
           allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
         });
-        const result = await runEmbeddedPiAgent({
+        const result = await runAgent({
           ...embeddedContext,
           ...senderContext,
           ...runBaseParams,

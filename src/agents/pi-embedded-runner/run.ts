@@ -252,7 +252,7 @@ function buildErrorAgentMeta(params: {
   };
 }
 
-export async function runEmbeddedPiAgent(
+async function runEmbeddedPiAgentCore(
   params: RunEmbeddedPiAgentParams,
 ): Promise<EmbeddedPiRunResult> {
   const sessionLane = resolveSessionLane(params.sessionKey?.trim() || params.sessionId);
