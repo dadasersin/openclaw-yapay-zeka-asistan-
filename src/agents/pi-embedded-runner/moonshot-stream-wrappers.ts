@@ -58,8 +58,12 @@ function isMoonshotRateLimitError(err: unknown): boolean {
   if (!err || typeof err !== "object") {
     return false;
   }
+  // Check top-level status/statusCode and nested response.status — both shapes
+  // are common depending on the HTTP client (e.g. err.status vs err.response.status).
   const status =
-    (err as { status?: unknown }).status ?? (err as { statusCode?: unknown }).statusCode;
+    (err as { status?: unknown }).status ??
+    (err as { statusCode?: unknown }).statusCode ??
+    (err as { response?: { status?: unknown } }).response?.status;
   return status === 429;
 }
 

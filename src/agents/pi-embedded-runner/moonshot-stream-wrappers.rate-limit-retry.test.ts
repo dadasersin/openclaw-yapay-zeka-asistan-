@@ -68,6 +68,23 @@ describe("createMoonshotRateLimitRetryWrapper", () => {
     vi.useRealTimers();
   });
 
+  it("retries when 429 is nested at err.response.status", async () => {
+    vi.useFakeTimers();
+    const err = Object.assign(new Error("Too Many Requests"), {
+      response: { status: 429 },
+    });
+    const inner = makeStreamFn([
+      () => Promise.reject(err) as unknown as ReturnType<StreamFn>,
+      () => createAssistantMessageEventStream(),
+    ]);
+    const wrapped = createMoonshotRateLimitRetryWrapper(inner);
+    const resultPromise = wrapped(model, context, {});
+    await vi.runAllTimersAsync();
+    await resultPromise;
+    expect(inner).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it("does not retry non-429 errors", async () => {
     const error = Object.assign(new Error("Internal Server Error"), { status: 500 });
     const inner = makeStreamFn([() => Promise.reject(error) as unknown as ReturnType<StreamFn>]);
