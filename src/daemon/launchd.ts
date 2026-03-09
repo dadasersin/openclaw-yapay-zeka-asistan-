@@ -387,7 +387,13 @@ export async function stopLaunchAgent({ stdout, env }: GatewayServiceControlArgs
   if (res.code !== 0 && !isLaunchctlNotLoaded(res)) {
     throw new Error(`launchctl bootout failed: ${res.stderr || res.stdout}`.trim());
   }
-  stdout.write(`${formatLine("Stopped LaunchAgent", `${domain}/${label}`)}\n`);
+  try {
+    stdout.write(`${formatLine("Stopped LaunchAgent", `${domain}/${label}`)}\n`);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException)?.code !== "EPIPE") {
+      throw err;
+    }
+  }
 }
 
 export async function installLaunchAgent({

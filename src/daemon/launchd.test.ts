@@ -11,6 +11,7 @@ import {
   repairLaunchAgentBootstrap,
   restartLaunchAgent,
   resolveLaunchAgentPlistPath,
+  stopLaunchAgent,
 } from "./launchd.js";
 
 const state = vi.hoisted(() => ({
@@ -402,6 +403,35 @@ describe("launchd install", () => {
         programArguments: defaultProgramArguments,
       }),
     ).rejects.toThrow("launchctl bootstrap failed: Operation not permitted");
+  });
+});
+
+describe("launchd stop", () => {
+  it("swallows EPIPE when stdout pipe is already closed", async () => {
+    const env: Record<string, string | undefined> = {
+      HOME: "/Users/test",
+      OPENCLAW_PROFILE: "default",
+    };
+    const broken = new PassThrough();
+    broken.write = () => {
+      const err = new Error("write EPIPE") as NodeJS.ErrnoException;
+      err.code = "EPIPE";
+      throw err;
+    };
+    // Should not throw — EPIPE is silently swallowed
+    await stopLaunchAgent({ env, stdout: broken });
+  });
+
+  it("rethrows non-EPIPE write errors", async () => {
+    const env: Record<string, string | undefined> = {
+      HOME: "/Users/test",
+      OPENCLAW_PROFILE: "default",
+    };
+    const broken = new PassThrough();
+    broken.write = () => {
+      throw new Error("disk full");
+    };
+    await expect(stopLaunchAgent({ env, stdout: broken })).rejects.toThrow("disk full");
   });
 });
 
