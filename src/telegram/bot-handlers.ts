@@ -115,6 +115,7 @@ export const registerTelegramHandlers = ({
   accountId,
   bot,
   opts,
+  telegramFetchImpl,
   runtime,
   mediaMaxBytes,
   telegramCfg,
@@ -363,7 +364,7 @@ export const registerTelegramHandlers = ({
       for (const { ctx } of entry.messages) {
         let media;
         try {
-          media = await resolveMedia(ctx, mediaMaxBytes, opts.token, opts.proxyFetch);
+          media = await resolveMedia(ctx, mediaMaxBytes, opts.token, telegramFetchImpl);
         } catch (mediaErr) {
           if (!isRecoverableMediaGroupError(mediaErr)) {
             throw mediaErr;
@@ -467,7 +468,7 @@ export const registerTelegramHandlers = ({
         },
         mediaMaxBytes,
         opts.token,
-        opts.proxyFetch,
+        telegramFetchImpl,
       );
       if (!media) {
         return [];
@@ -978,7 +979,7 @@ export const registerTelegramHandlers = ({
 
     let media: Awaited<ReturnType<typeof resolveMedia>> = null;
     try {
-      media = await resolveMedia(ctx, mediaMaxBytes, opts.token, opts.proxyFetch);
+      media = await resolveMedia(ctx, mediaMaxBytes, opts.token, telegramFetchImpl);
     } catch (mediaErr) {
       if (isMediaSizeLimitError(mediaErr)) {
         if (sendOversizeWarning) {
