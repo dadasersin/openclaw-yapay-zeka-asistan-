@@ -4,6 +4,7 @@ import { recordPendingHistoryEntryIfEnabled } from "../../../auto-reply/reply/hi
 import { resolveMentionGating } from "../../../channels/mention-gating.js";
 import type { loadConfig } from "../../../config/config.js";
 import { normalizeE164 } from "../../../utils.js";
+import { resolveWhatsAppAccount } from "../../accounts.js";
 import type { MentionConfig } from "../mentions.js";
 import { buildMentionConfig, debugMention, resolveOwnerList } from "../mentions.js";
 import type { WebInboundMsg } from "../types.js";
@@ -28,6 +29,7 @@ type ApplyGroupGatingParams = {
   sessionKey: string;
   baseMentionConfig: MentionConfig;
   authDir?: string;
+  accountId?: string;
   groupHistories: Map<string, GroupHistoryEntry[]>;
   groupHistoryLimit: number;
   groupMemberNames: Map<string, Map<string, string>>;
@@ -94,6 +96,11 @@ export function applyGroupGating(params: ApplyGroupGatingParams) {
   );
 
   const mentionConfig = buildMentionConfig(params.cfg, params.agentId);
+  // Override with account-level allowFrom for correct self-chat detection.
+  const account = resolveWhatsAppAccount({ cfg: params.cfg, accountId: params.accountId });
+  if (account.allowFrom != null) {
+    mentionConfig.allowFrom = account.allowFrom;
+  }
   const commandBody = stripMentionsForCommand(
     params.msg.body,
     mentionConfig.mentionRegexes,
