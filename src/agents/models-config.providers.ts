@@ -34,12 +34,15 @@ import {
   buildOpenAICodexProvider,
   buildOpenrouterProvider,
   buildQianfanProvider,
+  buildErnieProvider,
   buildQwenPortalProvider,
   buildSyntheticProvider,
   buildTogetherProvider,
   buildXiaomiProvider,
   QIANFAN_BASE_URL,
   QIANFAN_DEFAULT_MODEL_ID,
+  ERNIE_BASE_URL,
+  ERNIE_DEFAULT_MODEL_ID,
   XIAOMI_DEFAULT_MODEL_ID,
 } from "./models-config.providers.static.js";
 export {
@@ -47,9 +50,12 @@ export {
   buildKilocodeProvider,
   buildNvidiaProvider,
   buildQianfanProvider,
+  buildErnieProvider,
   buildXiaomiProvider,
   QIANFAN_BASE_URL,
   QIANFAN_DEFAULT_MODEL_ID,
+  ERNIE_BASE_URL,
+  ERNIE_DEFAULT_MODEL_ID,
   XIAOMI_DEFAULT_MODEL_ID,
 } from "./models-config.providers.static.js";
 import {
@@ -512,6 +518,7 @@ const SIMPLE_IMPLICIT_PROVIDER_LOADERS: ImplicitProviderLoader[] = [
     apiKey,
   })),
   withApiKey("qianfan", async ({ apiKey }) => ({ ...buildQianfanProvider(), apiKey })),
+  withApiKey("ernie", async ({ apiKey }) => ({ ...buildErnieProvider(), apiKey })),
   withApiKey("openrouter", async ({ apiKey }) => ({ ...buildOpenrouterProvider(), apiKey })),
   withApiKey("nvidia", async ({ apiKey }) => ({ ...buildNvidiaProvider(), apiKey })),
   withApiKey("kilocode", async ({ apiKey }) => ({
