@@ -29,9 +29,9 @@ describe("agents_list", () => {
     };
   }
 
-  function requireAgentsListTool() {
+  function requireAgentsListTool(requesterAgentId = "main") {
     const tool = createOpenClawTools({
-      agentSessionKey: "main",
+      agentSessionKey: requesterAgentId,
     }).find((candidate) => candidate.name === "agents_list");
     if (!tool) {
       throw new Error("missing agents_list tool");
@@ -183,5 +183,22 @@ describe("agents_list", () => {
     expect(agents?.map((agent) => agent.id)).toEqual(["main", "research"]);
     const research = agents?.find((agent) => agent.id === "research");
     expect(research?.configured).toBe(false);
+  });
+
+  it("denies implicit allow when requester agent has no config entry", async () => {
+    setConfigWithAgentList([
+      {
+        id: "configured-agent",
+        name: "Configured",
+      },
+    ]);
+
+    // Requester "unknown-agent" has no config entry — should NOT get implicit
+    // allow-any, so configured-agent should not appear in its list.
+    const tool = requireAgentsListTool("unknown-agent");
+    const result = await tool.execute("call-unknown", {});
+    const agents = readAgentList(result);
+    const ids = agents?.map((agent) => agent.id) ?? [];
+    expect(ids).not.toContain("configured-agent");
   });
 });

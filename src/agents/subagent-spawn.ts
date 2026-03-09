@@ -335,17 +335,22 @@ export async function spawnSubagentDirect(
   );
   const targetAgentId = requestedAgentId ? normalizeAgentId(requestedAgentId) : requesterAgentId;
   if (targetAgentId !== requesterAgentId) {
-    const allowAgentsRaw = resolveAgentConfig(cfg, requesterAgentId)?.subagents?.allowAgents;
+    const requesterConfig = resolveAgentConfig(cfg, requesterAgentId);
+    const allowAgentsRaw = requesterConfig?.subagents?.allowAgents;
     const allowAgents = allowAgentsRaw ?? [];
     const allowAny = allowAgents.some((value) => value.trim() === "*");
     const normalizedTargetId = targetAgentId.toLowerCase();
     // When allowAgents is not configured (undefined), allow all configured agents
-    // so they are discoverable out-of-the-box.
+    // so they are discoverable out-of-the-box — but only when the requester
+    // agent itself has a config entry.  Unknown/unconfigured requesters must
+    // not receive implicit allow.
     const configuredIds = Array.isArray(cfg.agents?.list)
       ? cfg.agents.list.map((entry) => normalizeAgentId(entry.id).toLowerCase())
       : [];
     const implicitAllow =
-      allowAgentsRaw === undefined && configuredIds.includes(normalizedTargetId);
+      allowAgentsRaw === undefined &&
+      requesterConfig !== undefined &&
+      configuredIds.includes(normalizedTargetId);
     const allowSet = new Set(
       allowAgents
         .filter((value) => value.trim() && value.trim() !== "*")

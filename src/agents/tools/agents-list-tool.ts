@@ -51,7 +51,9 @@ export function createAgentsListTool(opts?: {
       // When allowAgents is not configured (undefined), default to allowing all
       // configured agents so they are discoverable out-of-the-box.
       // Only an explicit empty array restricts to requester-only.
-      const allowAgentsNotSet = allowAgentsRaw === undefined;
+      // Only grant implicit allow-any when the requester agent itself has a
+      // config entry — unknown/unconfigured requesters must not receive it.
+      const allowAgentsNotSet = allowAgentsRaw === undefined && agentCfg !== undefined;
       const allowAgents = allowAgentsRaw ?? [];
       const allowAny = allowAgentsNotSet || allowAgents.some((value) => value.trim() === "*");
       const allowSet = new Set(
