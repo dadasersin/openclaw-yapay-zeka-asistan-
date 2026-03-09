@@ -41,6 +41,7 @@ import {
   startAcpSpawnParentStreamRelay,
 } from "./acp-spawn-parent-stream.js";
 import { resolveSandboxRuntimeStatus } from "./sandbox/runtime-status.js";
+import { registerSubagentRun } from "./subagent-registry.js";
 import { resolveInternalSessionKey, resolveMainSessionAlias } from "./tools/sessions-helpers.js";
 
 const log = createSubsystemLogger("agents/acp-spawn");
@@ -581,6 +582,43 @@ export async function spawnAcpDirect(
       error: summarizeError(err),
       childSessionKey: sessionKey,
     };
+  }
+
+  // Register one-shot ACP runs in the subagent registry so the existing
+  // announce pipeline delivers a completion notification back to the
+  // requester channel (Discord, WhatsApp, etc.) when the run finishes.
+  // Session-mode ("persistent thread-bound") ACP sessions are long-lived and
+  // don't have a natural completion point, so we skip registration for those.
+  // Only register when there is an explicit requester session context (i.e.
+  // the spawn was triggered from within another agent turn, not standalone).
+  const explicitRequesterKey = ctx.agentSessionKey?.trim();
+  if (spawnMode === "run" && explicitRequesterKey && requesterInternalKey) {
+    try {
+      const requesterOrigin = normalizeDeliveryContext({
+        channel: ctx.agentChannel,
+        accountId: ctx.agentAccountId,
+        to: ctx.agentTo,
+        threadId: ctx.agentThreadId,
+      });
+      registerSubagentRun({
+        runId: childRunId,
+        childSessionKey: sessionKey,
+        requesterSessionKey: requesterInternalKey,
+        requesterOrigin: requesterOrigin ?? undefined,
+        requesterDisplayKey: requesterInternalKey,
+        task: params.task,
+        cleanup: "keep",
+        label: params.label || undefined,
+        expectsCompletionMessage: true,
+        spawnMode: "run",
+      });
+    } catch (err) {
+      // Best-effort: registration failure should not prevent the spawn
+      // from succeeding. Log for diagnostics only.
+      log.warn?.(
+        `acp-spawn: failed to register run ${childRunId} for completion announce: ${String(err)}`,
+      );
+    }
   }
 
   if (streamToParentRequested && parentSessionKey) {
