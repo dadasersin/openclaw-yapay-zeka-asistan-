@@ -61,6 +61,13 @@ describe("onboard rescue helpers", () => {
     const config = buildRescueWatchdogConfig({
       sourceConfig: {
         tools: { profile: "minimal" },
+        env: {
+          shellEnv: { enabled: true },
+          vars: {
+            OPENAI_API_KEY: "main-key",
+          },
+          OPENROUTER_BASE_URL: "https://router.example.test",
+        },
         cron: { enabled: false },
         channels: {
           telegram: { botToken: "nope" },
@@ -84,6 +91,13 @@ describe("onboard rescue helpers", () => {
       },
     });
     expect(config.tools?.profile).toBe("coding");
+    expect(config.env).toEqual({
+      shellEnv: { enabled: true },
+      vars: {
+        OPENAI_API_KEY: "main-key",
+      },
+      OPENROUTER_BASE_URL: "https://router.example.test",
+    });
     expect(config.agents?.defaults?.workspace).toBe("/tmp/workspace-rescue");
     expect(config.agents?.defaults?.heartbeat?.every).toBe("0m");
     expect(config.cron).toBeUndefined();
@@ -95,11 +109,26 @@ describe("onboard rescue helpers", () => {
     const config = buildRescueWatchdogConfig({
       sourceConfig: {
         tools: { profile: "coding" },
+        env: {
+          shellEnv: { enabled: false, timeoutMs: 5_000 },
+          vars: {
+            OPENAI_API_KEY: "rotated-main-key",
+          },
+          OPENROUTER_BASE_URL: "https://router.example.test",
+        },
       },
       existingRescueConfig: {
         cron: { enabled: false },
         channels: {
           telegram: { botToken: "keep-me" },
+        },
+        env: {
+          shellEnv: { enabled: true, timeoutMs: 30_000 },
+          vars: {
+            OPENAI_API_KEY: "stale-rescue-key",
+            RESCUE_ONLY_KEY: "keep-me",
+          },
+          RESCUE_ENDPOINT: "https://rescue.example.test",
         },
       },
       rescueWorkspace: "/tmp/workspace-rescue",
@@ -109,6 +138,15 @@ describe("onboard rescue helpers", () => {
 
     expect(config.channels).toEqual({
       telegram: { botToken: "keep-me" },
+    });
+    expect(config.env).toEqual({
+      shellEnv: { enabled: false, timeoutMs: 5_000 },
+      vars: {
+        OPENAI_API_KEY: "rotated-main-key",
+        RESCUE_ONLY_KEY: "keep-me",
+      },
+      OPENROUTER_BASE_URL: "https://router.example.test",
+      RESCUE_ENDPOINT: "https://rescue.example.test",
     });
     expect(config.cron).toEqual({ enabled: false });
   });

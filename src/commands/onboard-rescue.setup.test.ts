@@ -224,6 +224,79 @@ describe("setupRescueWatchdog", () => {
     expect(rescueStore.profiles).toHaveProperty("rescue-only");
   });
 
+  it("refreshes stale rescue auth entries from the primary profile on rerun", async () => {
+    const mainStateDir = path.join(tempHome, ".openclaw-work");
+    const mainConfigPath = path.join(mainStateDir, "openclaw.json");
+    const mainAgentDir = path.join(mainStateDir, "agents", "main", "agent");
+    const rescueStateDir = path.join(tempHome, ".openclaw-work-rescue");
+    const rescueAgentDir = path.join(rescueStateDir, "agents", "main", "agent");
+
+    process.env.HOME = tempHome;
+    process.env.OPENCLAW_TEST_FAST = "1";
+    process.env.OPENCLAW_PROFILE = "work";
+    process.env.OPENCLAW_STATE_DIR = mainStateDir;
+    process.env.OPENCLAW_CONFIG_PATH = mainConfigPath;
+    process.env.OPENCLAW_GATEWAY_PORT = "18789";
+
+    await fs.mkdir(mainAgentDir, { recursive: true });
+    await fs.mkdir(rescueAgentDir, { recursive: true });
+    await fs.mkdir(mainStateDir, { recursive: true });
+    await fs.writeFile(mainConfigPath, JSON.stringify({ wizard: { marker: "main" } }), "utf8");
+
+    saveAuthProfileStore(
+      {
+        version: 1,
+        profiles: {
+          "shared-key": {
+            type: "api_key",
+            provider: "openai",
+            key: "rotated-main-secret", // pragma: allowlist secret
+          },
+        },
+      },
+      mainAgentDir,
+    );
+    saveAuthProfileStore(
+      {
+        version: 1,
+        profiles: {
+          "shared-key": {
+            type: "api_key",
+            provider: "openai",
+            key: "stale-rescue-secret", // pragma: allowlist secret
+          },
+          "rescue-only": {
+            type: "api_key",
+            provider: "openai",
+            key: "rescue-secret", // pragma: allowlist secret
+          },
+        },
+      },
+      rescueAgentDir,
+    );
+
+    await setupRescueWatchdog({
+      sourceConfig: {
+        tools: { profile: "coding" },
+      },
+      workspaceDir: path.join(tempHome, "workspace-work"),
+      mainPort: 18_789,
+      monitoredProfile: "work",
+      runtime: "node",
+      output: {
+        log: vi.fn(),
+      },
+    });
+
+    const rescueStore = JSON.parse(
+      await fs.readFile(path.join(rescueAgentDir, "auth-profiles.json"), "utf8"),
+    ) as {
+      profiles: Record<string, { key?: string }>;
+    };
+    expect(rescueStore.profiles["shared-key"]?.key).toBe("rotated-main-secret");
+    expect(rescueStore.profiles["rescue-only"]?.key).toBe("rescue-secret");
+  });
+
   it("reinstalls the rescue service when the installed command drifts", async () => {
     process.env.HOME = tempHome;
     process.env.OPENCLAW_TEST_FAST = "1";

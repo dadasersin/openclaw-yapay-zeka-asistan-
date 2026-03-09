@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ensureAuthProfileStore, saveAuthProfileStore } from "../agents/auth-profiles.js";
+import {
+  ensureAuthProfileStore,
+  loadAuthProfileStore,
+  saveAuthProfileStore,
+  type AuthProfileStore,
+} from "../agents/auth-profiles.js";
 import { ensureAgentWorkspace } from "../agents/workspace.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { isValidProfileName } from "../cli/profile-utils.js";
@@ -147,6 +152,56 @@ function resolveRescueToolProfile(sourceProfile: unknown, existingProfile: unkno
   return "coding";
 }
 
+function mergeRescueAuthRecords<T>(
+  existing: Record<string, T> | undefined,
+  source: Record<string, T> | undefined,
+): Record<string, T> | undefined {
+  if (!existing && !source) {
+    return undefined;
+  }
+  return {
+    ...existing,
+    ...source,
+  };
+}
+
+function mergeRescueAuthStores(
+  existing: AuthProfileStore,
+  source: AuthProfileStore,
+): AuthProfileStore {
+  return {
+    version: Math.max(existing.version, source.version),
+    profiles: {
+      ...existing.profiles,
+      ...source.profiles,
+    },
+    order: mergeRescueAuthRecords(existing.order, source.order),
+    lastGood: mergeRescueAuthRecords(existing.lastGood, source.lastGood),
+    usageStats: mergeRescueAuthRecords(existing.usageStats, source.usageStats),
+  };
+}
+
+function mergeRescueEnvConfig(
+  existingEnv: OpenClawConfig["env"],
+  sourceEnv: OpenClawConfig["env"],
+): OpenClawConfig["env"] {
+  if (!existingEnv && !sourceEnv) {
+    return undefined;
+  }
+  return {
+    ...existingEnv,
+    ...sourceEnv,
+    vars: {
+      ...existingEnv?.vars,
+      ...sourceEnv?.vars,
+    },
+    shellEnv: {
+      ...existingEnv?.shellEnv,
+      ...sourceEnv?.shellEnv,
+    },
+  };
+}
+
 function normalizeServiceEnvironment(environment?: Record<string, string | undefined>) {
   return Object.entries(environment ?? {})
     .filter(([, value]) => value !== undefined)
@@ -223,6 +278,7 @@ export function buildRescueWatchdogConfig(params: {
       },
     },
     auth: sourceConfig.auth ?? existing.auth,
+    env: mergeRescueEnvConfig(existing.env, sourceConfig.env),
     // Keep rescue scheduler settings if they already exist, but do not copy the
     // primary profile's cron settings or stored jobs into a fresh rescue profile.
     cron: existing.cron,
@@ -284,10 +340,13 @@ async function syncRescueAuthProfiles(params: { rescueEnv: NodeJS.ProcessEnv }) 
   }
   const rescueAgentDir = path.join(rescueStateDir, "agents", DEFAULT_AGENT_ID, "agent");
   await fs.mkdir(rescueAgentDir, { recursive: true });
-  // Load from the rescue agent dir so existing rescue-only credentials survive,
-  // while the main profile store is still inherited/merged in by auth-profile loading.
-  const store = ensureAuthProfileStore(rescueAgentDir, { allowKeychainPrompt: false });
-  saveAuthProfileStore(store, rescueAgentDir);
+  const existingRescueStore = ensureAuthProfileStore(rescueAgentDir, {
+    allowKeychainPrompt: false,
+  });
+  const sourceStore = loadAuthProfileStore();
+  // Keep rescue-only credentials, but let the monitored profile's latest auth
+  // entries override stale duplicates on onboarding reruns.
+  saveAuthProfileStore(mergeRescueAuthStores(existingRescueStore, sourceStore), rescueAgentDir);
 }
 
 async function ensureRescueWorkspace(params: {
