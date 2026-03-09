@@ -442,8 +442,12 @@ export async function ensureLoaded(
 
     const sessionTarget =
       typeof raw.sessionTarget === "string" ? raw.sessionTarget.trim().toLowerCase() : "";
+    // Support isolated, custom session IDs (session:xxx), and resolved "current" as isolated-like
     const isIsolatedAgentTurn =
-      sessionTarget === "isolated" || (sessionTarget === "" && payloadKind === "agentTurn");
+      sessionTarget === "isolated" ||
+      sessionTarget === "current" ||
+      sessionTarget.startsWith("session:") ||
+      (sessionTarget === "" && payloadKind === "agentTurn");
     const hasDelivery = delivery && typeof delivery === "object" && !Array.isArray(delivery);
     const normalizedLegacy = normalizeLegacyDeliveryInput({
       delivery: hasDelivery ? (delivery as Record<string, unknown>) : null,
