@@ -86,6 +86,8 @@ type TelegramReactionOpts = {
   remove?: boolean;
   verbose?: boolean;
   retry?: RetryConfig;
+  /** Optional config injection to avoid global loadConfig() (improves testability). */
+  cfg?: ReturnType<typeof loadConfig>;
 };
 
 function resolveTelegramMessageIdOrThrow(
@@ -829,6 +831,8 @@ type TelegramDeleteOpts = {
   verbose?: boolean;
   api?: TelegramApiOverride;
   retry?: RetryConfig;
+  /** Optional config injection to avoid global loadConfig() (improves testability). */
+  cfg?: ReturnType<typeof loadConfig>;
 };
 
 export async function deleteMessageTelegram(
@@ -992,6 +996,8 @@ type TelegramStickerOpts = {
   replyToMessageId?: number;
   /** Forum topic thread ID (for forum supergroups) */
   messageThreadId?: number;
+  /** Optional config injection to avoid global loadConfig() (improves testability). */
+  cfg?: ReturnType<typeof loadConfig>;
 };
 
 /**
