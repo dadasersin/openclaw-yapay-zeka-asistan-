@@ -5,6 +5,7 @@ const loadConfigMock = vi.fn();
 const resolveAgentWorkspaceDirMock = vi.fn();
 const resolveDefaultAgentIdMock = vi.fn();
 const buildWorkspaceSkillStatusMock = vi.fn();
+const loadWorkspaceSkillEntriesMock = vi.fn();
 const installSkillMock = vi.fn();
 const formatSkillsListMock = vi.fn();
 const formatSkillInfoMock = vi.fn();
@@ -28,6 +29,10 @@ vi.mock("../agents/agent-scope.js", () => ({
 
 vi.mock("../agents/skills-status.js", () => ({
   buildWorkspaceSkillStatus: buildWorkspaceSkillStatusMock,
+}));
+
+vi.mock("../agents/skills.js", () => ({
+  loadWorkspaceSkillEntries: loadWorkspaceSkillEntriesMock,
 }));
 
 vi.mock("../agents/skills-install.js", () => ({
@@ -95,6 +100,7 @@ describe("registerSkillsCli", () => {
     resolveDefaultAgentIdMock.mockReturnValue("main");
     resolveAgentWorkspaceDirMock.mockReturnValue("/tmp/workspace");
     buildWorkspaceSkillStatusMock.mockReturnValue(report);
+    loadWorkspaceSkillEntriesMock.mockReturnValue([]);
     formatSkillsListMock.mockReturnValue("skills-list-output");
     formatSkillInfoMock.mockReturnValue("skills-info-output");
     formatSkillsCheckMock.mockReturnValue("skills-check-output");
@@ -177,8 +183,24 @@ describe("registerSkillsCli", () => {
       ],
     };
 
+    const canonicalEntries = [
+      {
+        skill: {
+          name: "peekaboo",
+        },
+        metadata: {
+          install: [
+            {
+              id: "brew-peekaboo",
+            },
+          ],
+        },
+      },
+    ];
+
     it("installs skill successfully and prints success", async () => {
       buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
       installSkillMock.mockResolvedValue({
         ok: true,
         message: "",
@@ -202,6 +224,7 @@ describe("registerSkillsCli", () => {
 
     it("prints warnings on successful install with warnings", async () => {
       buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
       installSkillMock.mockResolvedValue({
         ok: true,
         message: "",
@@ -220,6 +243,7 @@ describe("registerSkillsCli", () => {
 
     it("prints error and exits 1 on install failure", async () => {
       buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
       installSkillMock.mockResolvedValue({
         ok: false,
         message: "brew not found",
@@ -237,6 +261,7 @@ describe("registerSkillsCli", () => {
 
     it("prints error and exits 1 when skill not found", async () => {
       buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
 
       await runCli(["skills", "install", "nonexistent"]);
 
@@ -247,6 +272,7 @@ describe("registerSkillsCli", () => {
 
     it("prints error when no install options available", async () => {
       buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
 
       await runCli(["skills", "install", "no-install"]);
 
@@ -259,6 +285,7 @@ describe("registerSkillsCli", () => {
 
     it("forwards --install-id option", async () => {
       buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
       installSkillMock.mockResolvedValue({
         ok: true,
         message: "",
@@ -275,6 +302,7 @@ describe("registerSkillsCli", () => {
 
     it("forwards --timeout option", async () => {
       buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
       installSkillMock.mockResolvedValue({
         ok: true,
         message: "",
@@ -285,6 +313,46 @@ describe("registerSkillsCli", () => {
       await runCli(["skills", "install", "peekaboo", "--timeout", "60000"]);
 
       expect(installSkillMock).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 60_000 }));
+    });
+
+    it("prints structured install failure message when stdio is empty", async () => {
+      buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
+      installSkillMock.mockResolvedValue({
+        ok: false,
+        message: "Installer not found: bad-id",
+        stdout: "",
+        stderr: "",
+        code: null,
+      });
+
+      await runCli(["skills", "install", "peekaboo"]);
+
+      expect(runtime.log).toHaveBeenCalledWith("Installer not found: bad-id");
+      expect(runtime.exit).toHaveBeenCalledWith(1);
+    });
+
+    it("validates --timeout before calling installSkill", async () => {
+      buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
+
+      await runCli(["skills", "install", "peekaboo", "--timeout", "nope"]);
+
+      expect(runtime.error).toHaveBeenCalledWith("Error: Invalid --timeout value: nope");
+      expect(installSkillMock).not.toHaveBeenCalled();
+      expect(runtime.exit).toHaveBeenCalledWith(1);
+    });
+
+    it("dismisses progress when install throws", async () => {
+      buildWorkspaceSkillStatusMock.mockReturnValue(reportWithSkill);
+      loadWorkspaceSkillEntriesMock.mockReturnValue(canonicalEntries);
+      installSkillMock.mockRejectedValue(new Error("kaboom"));
+
+      await runCli(["skills", "install", "peekaboo"]);
+
+      expect(progressMock.done).toHaveBeenCalled();
+      expect(runtime.error).toHaveBeenCalledWith("Error: kaboom");
+      expect(runtime.exit).toHaveBeenCalledWith(1);
     });
   });
 });
