@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseStrictInteger, parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
@@ -117,16 +118,54 @@ function resolveGuiDomain(): string {
 
 async function ensureSecureDirectory(targetPath: string): Promise<void> {
   await fs.mkdir(targetPath, { recursive: true, mode: LAUNCH_AGENT_DIR_MODE });
-  try {
-    const stat = await fs.stat(targetPath);
-    const mode = stat.mode & 0o777;
-    const tightenedMode = mode & ~0o022;
-    if (tightenedMode !== mode) {
-      await fs.chmod(targetPath, tightenedMode);
-    }
-  } catch {
-    // Best effort: keep install working even if chmod/stat is unavailable.
+  const stat = await fs.lstat(targetPath);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Refusing to use symlinked LaunchAgent path: ${targetPath}`);
   }
+  if (!stat.isDirectory()) {
+    throw new Error(`Expected LaunchAgent directory at ${targetPath}`);
+  }
+  const mode = stat.mode & 0o777;
+  const tightenedMode = mode & ~0o022;
+  if (tightenedMode !== mode) {
+    await fs.chmod(targetPath, tightenedMode).catch(() => undefined);
+  }
+}
+
+async function assertNotSymlink(targetPath: string): Promise<void> {
+  try {
+    const stat = await fs.lstat(targetPath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Refusing to use symlinked LaunchAgent path: ${targetPath}`);
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function writeLaunchAgentPlistSecure(plistPath: string, plist: string): Promise<void> {
+  await assertNotSymlink(plistPath);
+  const dir = path.dirname(plistPath);
+  const tempPath = path.join(dir, `.${path.basename(plistPath)}.${process.pid}.tmp`);
+  await assertNotSymlink(tempPath);
+  const handle = await fs.open(
+    tempPath,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW,
+    LAUNCH_AGENT_PLIST_MODE,
+  );
+  try {
+    await handle.writeFile(plist, { encoding: "utf8" });
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await fs.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
+  await handle.close();
+  await fs.rename(tempPath, plistPath);
 }
 
 export type LaunchctlPrintInfo = {
@@ -417,7 +456,6 @@ export async function installLaunchAgent({
   const plistPath = resolveLaunchAgentPlistPathForLabel(env, label);
   const home = toPosixPath(resolveHomeDir(env));
   const libraryDir = path.posix.join(home, "Library");
-  await ensureSecureDirectory(home);
   await ensureSecureDirectory(libraryDir);
   await ensureSecureDirectory(path.dirname(plistPath));
 
@@ -431,8 +469,7 @@ export async function installLaunchAgent({
     stderrPath,
     environment,
   });
-  await fs.writeFile(plistPath, plist, { encoding: "utf8", mode: LAUNCH_AGENT_PLIST_MODE });
-  await fs.chmod(plistPath, LAUNCH_AGENT_PLIST_MODE).catch(() => undefined);
+  await writeLaunchAgentPlistSecure(plistPath, plist);
 
   await execLaunchctl(["bootout", domain, plistPath]);
   await execLaunchctl(["unload", plistPath]);

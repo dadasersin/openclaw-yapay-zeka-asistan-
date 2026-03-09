@@ -23,10 +23,13 @@ describe("onboard rescue helpers", () => {
     expect(canEnableRescueWatchdog("work-rescue")).toBe(false);
   });
 
-  it("derives stable rescue profile names and ports", () => {
+  it("derives stable rescue profile names and ports", async () => {
     expect(resolveRescueProfileName("default")).toBe("rescue");
     expect(resolveRescueProfileName("work")).toBe("work-rescue");
-    expect(resolveRescueGatewayPort(18_789)).toBe(19_789);
+    const rescuePort = await resolveRescueGatewayPort(18_789);
+    expect(rescuePort).toBeGreaterThanOrEqual(1024);
+    expect(rescuePort).toBeLessThanOrEqual(65_535);
+    expect(await resolveRescueGatewayPort(18_789, { gateway: { port: 19_789 } })).toBe(19_789);
   });
 
   it("adds a stable hash suffix when long monitored profiles must be truncated", () => {
@@ -76,6 +79,7 @@ describe("onboard rescue helpers", () => {
           enabled: true,
         },
       },
+      monitoredProfile: "work",
       rescueWorkspace: "/tmp/workspace-rescue",
       rescuePort: 19_789,
       rescueToken: "rescue-token",
@@ -91,6 +95,19 @@ describe("onboard rescue helpers", () => {
       },
     });
     expect(config.tools?.profile).toBe("coding");
+    expect(config.agents?.list).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "rescue-watchdog",
+          workspace: "/tmp/workspace-rescue",
+          skills: [],
+          tools: expect.objectContaining({
+            profile: "minimal",
+            allow: ["exec"],
+          }),
+        }),
+      ]),
+    );
     expect(config.env).toEqual({
       shellEnv: { enabled: true },
       vars: {
@@ -103,6 +120,11 @@ describe("onboard rescue helpers", () => {
     expect(config.cron).toBeUndefined();
     expect(config.channels).toBeUndefined();
     expect(config.web).toBeUndefined();
+    expect(config.wizard?.rescueWatchdog).toEqual({
+      managed: true,
+      monitoredProfile: "work",
+      agentId: "rescue-watchdog",
+    });
   });
 
   it("preserves existing rescue config when re-running onboarding", () => {
@@ -122,6 +144,14 @@ describe("onboard rescue helpers", () => {
         channels: {
           telegram: { botToken: "keep-me" },
         },
+        agents: {
+          list: [
+            {
+              id: "existing",
+              workspace: "/tmp/other",
+            },
+          ],
+        },
         env: {
           shellEnv: { enabled: true, timeoutMs: 30_000 },
           vars: {
@@ -131,6 +161,7 @@ describe("onboard rescue helpers", () => {
           RESCUE_ENDPOINT: "https://rescue.example.test",
         },
       },
+      monitoredProfile: "work",
       rescueWorkspace: "/tmp/workspace-rescue",
       rescuePort: 19_789,
       rescueToken: "rescue-token",
@@ -139,6 +170,12 @@ describe("onboard rescue helpers", () => {
     expect(config.channels).toEqual({
       telegram: { botToken: "keep-me" },
     });
+    expect(config.agents?.list).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "existing", workspace: "/tmp/other" }),
+        expect.objectContaining({ id: "rescue-watchdog", workspace: "/tmp/workspace-rescue" }),
+      ]),
+    );
     expect(config.env).toEqual({
       shellEnv: { enabled: false, timeoutMs: 5_000 },
       vars: {
@@ -149,5 +186,10 @@ describe("onboard rescue helpers", () => {
       RESCUE_ENDPOINT: "https://rescue.example.test",
     });
     expect(config.cron).toEqual({ enabled: false });
+    expect(config.wizard?.rescueWatchdog).toEqual({
+      managed: true,
+      monitoredProfile: "work",
+      agentId: "rescue-watchdog",
+    });
   });
 });

@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   printOutput: "",
   bootstrapError: "",
   dirs: new Set<string>(),
+  symlinks: new Set<string>(),
   dirModes: new Map<string, number>(),
   files: new Map<string, string>(),
   fileModes: new Map<string, number>(),
@@ -66,8 +67,40 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     }),
     mkdir: vi.fn(async (p: string, opts?: { mode?: number }) => {
       const key = String(p);
+      if (state.symlinks.has(key)) {
+        return;
+      }
       state.dirs.add(key);
       state.dirModes.set(key, opts?.mode ?? 0o777);
+    }),
+    lstat: vi.fn(async (p: string) => {
+      const key = String(p);
+      if (state.symlinks.has(key)) {
+        return {
+          mode: 0o777,
+          isDirectory: () => false,
+          isSymbolicLink: () => true,
+        };
+      }
+      if (state.dirs.has(key)) {
+        return {
+          mode: state.dirModes.get(key) ?? 0o777,
+          isDirectory: () => true,
+          isSymbolicLink: () => false,
+        };
+      }
+      if (state.files.has(key)) {
+        return {
+          mode: state.fileModes.get(key) ?? 0o666,
+          isDirectory: () => false,
+          isSymbolicLink: () => false,
+        };
+      }
+      const error = new Error(
+        `ENOENT: no such file or directory, lstat '${key}'`,
+      ) as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
     }),
     stat: vi.fn(async (p: string) => {
       const key = String(p);
@@ -91,8 +124,41 @@ vi.mock("node:fs/promises", async (importOriginal) => {
       }
       throw new Error(`ENOENT: no such file or directory, chmod '${key}'`);
     }),
+    open: vi.fn(async (p: string, _flags?: number, mode?: number) => {
+      const key = String(p);
+      if (state.symlinks.has(key)) {
+        const error = new Error(
+          `ELOOP: too many symbolic links encountered, open '${key}'`,
+        ) as NodeJS.ErrnoException;
+        error.code = "ELOOP";
+        throw error;
+      }
+      state.fileModes.set(key, typeof mode === "number" ? mode : 0o666);
+      return {
+        writeFile: async (data: string) => {
+          state.files.set(key, data);
+          state.fileModes.set(key, typeof mode === "number" ? mode : 0o666);
+        },
+        close: async () => {},
+      };
+    }),
+    rename: vi.fn(async (from: string, to: string) => {
+      const fromKey = String(from);
+      const toKey = String(to);
+      const content = state.files.get(fromKey);
+      if (content === undefined) {
+        throw new Error(`ENOENT: no such file or directory, rename '${fromKey}'`);
+      }
+      state.files.set(toKey, content);
+      state.fileModes.set(toKey, state.fileModes.get(fromKey) ?? 0o666);
+      state.files.delete(fromKey);
+      state.fileModes.delete(fromKey);
+      state.symlinks.delete(toKey);
+    }),
     unlink: vi.fn(async (p: string) => {
-      state.files.delete(String(p));
+      const key = String(p);
+      state.files.delete(key);
+      state.symlinks.delete(key);
     }),
     writeFile: vi.fn(async (p: string, data: string, opts?: { mode?: number }) => {
       const key = String(p);
@@ -110,6 +176,7 @@ beforeEach(() => {
   state.printOutput = "";
   state.bootstrapError = "";
   state.dirs.clear();
+  state.symlinks.clear();
   state.dirModes.clear();
   state.files.clear();
   state.fileModes.clear();
@@ -284,8 +351,6 @@ describe("launchd install", () => {
 
   it("tightens writable bits on launch agent dirs and plist", async () => {
     const env = createDefaultLaunchdEnv();
-    state.dirs.add(env.HOME!);
-    state.dirModes.set(env.HOME!, 0o777);
     state.dirs.add("/Users/test/Library");
     state.dirModes.set("/Users/test/Library", 0o777);
 
@@ -296,10 +361,44 @@ describe("launchd install", () => {
     });
 
     const plistPath = resolveLaunchAgentPlistPath(env);
-    expect(state.dirModes.get(env.HOME!)).toBe(0o755);
     expect(state.dirModes.get("/Users/test/Library")).toBe(0o755);
     expect(state.dirModes.get("/Users/test/Library/LaunchAgents")).toBe(0o755);
     expect(state.fileModes.get(plistPath)).toBe(0o644);
+  });
+
+  it("rejects symlinked launch agent directories", async () => {
+    const env = createDefaultLaunchdEnv();
+    state.dirs.add("/Users/test/Library");
+    state.dirModes.set("/Users/test/Library", 0o755);
+    state.symlinks.add("/Users/test/Library/LaunchAgents");
+
+    await expect(
+      installLaunchAgent({
+        env,
+        stdout: new PassThrough(),
+        programArguments: defaultProgramArguments,
+      }),
+    ).rejects.toThrow(
+      "Refusing to use symlinked LaunchAgent path: /Users/test/Library/LaunchAgents",
+    );
+  });
+
+  it("rejects symlinked launch agent plist targets", async () => {
+    const env = createDefaultLaunchdEnv();
+    const plistPath = resolveLaunchAgentPlistPath(env);
+    state.dirs.add("/Users/test/Library");
+    state.dirModes.set("/Users/test/Library", 0o755);
+    state.dirs.add("/Users/test/Library/LaunchAgents");
+    state.dirModes.set("/Users/test/Library/LaunchAgents", 0o755);
+    state.symlinks.add(plistPath);
+
+    await expect(
+      installLaunchAgent({
+        env,
+        stdout: new PassThrough(),
+        programArguments: defaultProgramArguments,
+      }),
+    ).rejects.toThrow(`Refusing to use symlinked LaunchAgent path: ${plistPath}`);
   });
 
   it("restarts LaunchAgent with bootout-enable-bootstrap-kickstart order", async () => {

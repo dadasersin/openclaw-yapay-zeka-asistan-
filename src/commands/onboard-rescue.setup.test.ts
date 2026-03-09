@@ -18,6 +18,20 @@ const resolveGatewayInstallToken = vi.hoisted(() =>
   })),
 );
 const waitForGatewayReachable = vi.hoisted(() => vi.fn(async () => {}));
+const probeGateway = vi.hoisted(() =>
+  vi.fn(async () => ({
+    ok: false,
+    close: { code: 1008, reason: "auth required" },
+  })),
+);
+const inspectPortUsage = vi.hoisted(() =>
+  vi.fn(async (port: number) => ({
+    port,
+    status: "busy",
+    listeners: [{ pid: 4242, commandLine: "openclaw gateway run" }],
+    hints: [],
+  })),
+);
 const callGateway = vi.hoisted(() =>
   vi.fn(async (params: { method: string }) => {
     if (params.method === "cron.list") {
@@ -41,7 +55,12 @@ const gatewayReadCommand = vi.hoisted(() =>
     } | null>
   >(async () => null),
 );
-const gatewayReadRuntime = vi.hoisted(() => vi.fn(async () => "node"));
+const gatewayReadRuntime = vi.hoisted(() =>
+  vi.fn(async () => ({
+    status: "running",
+    pid: 4242,
+  })),
+);
 
 vi.mock("../agents/workspace.js", () => ({
   ensureAgentWorkspace: vi.fn(async ({ dir }: { dir: string }) => ({ dir })),
@@ -59,6 +78,18 @@ vi.mock("./gateway-install-token.js", () => ({
 vi.mock("./onboard-helpers.js", () => ({
   randomToken: vi.fn(() => "generated-rescue-token"),
   waitForGatewayReachable,
+}));
+
+vi.mock("../gateway/probe.js", () => ({
+  probeGateway,
+}));
+
+vi.mock("../infra/ports.js", () => ({
+  inspectPortUsage,
+  classifyPortListener: vi.fn(() => "gateway"),
+  formatPortDiagnostics: vi.fn((usage: { port: number }) => [
+    `Port ${usage.port} is already in use.`,
+  ]),
 }));
 
 vi.mock("../gateway/call.js", () => ({
@@ -96,6 +127,8 @@ describe("setupRescueWatchdog", () => {
     buildGatewayInstallPlan.mockClear();
     resolveGatewayInstallToken.mockClear();
     waitForGatewayReachable.mockClear();
+    probeGateway.mockClear();
+    inspectPortUsage.mockClear();
     callGateway.mockClear();
     gatewayInstall.mockClear();
     gatewayRestart.mockClear();
@@ -104,7 +137,10 @@ describe("setupRescueWatchdog", () => {
     gatewayReadRuntime.mockReset();
     gatewayIsLoaded.mockResolvedValue(false);
     gatewayReadCommand.mockResolvedValue(null);
-    gatewayReadRuntime.mockResolvedValue("node");
+    gatewayReadRuntime.mockResolvedValue({
+      status: "running",
+      pid: 4242,
+    });
   });
 
   afterEach(async () => {
@@ -183,6 +219,8 @@ describe("setupRescueWatchdog", () => {
     });
 
     expect(result.rescueProfile).toBe("work-rescue");
+    expect(result.rescuePort).toBeGreaterThanOrEqual(1024);
+    expect(result.rescuePort).toBeLessThanOrEqual(65_535);
     expect(buildGatewayInstallPlan).toHaveBeenCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({
@@ -191,7 +229,7 @@ describe("setupRescueWatchdog", () => {
           OPENCLAW_CONFIG_PATH: rescueConfigPath,
           HOME: tempHome,
         }),
-        port: 19_789,
+        port: result.rescuePort,
       }),
     );
     const rescuePlanCall = (buildGatewayInstallPlan.mock.calls as unknown[][]).at(0);
@@ -211,9 +249,28 @@ describe("setupRescueWatchdog", () => {
     expect(mainConfig.wizard?.marker).toBe("main");
 
     const rescueConfig = JSON.parse(await fs.readFile(rescueConfigPath, "utf8")) as {
+      agents?: { list?: Array<{ id?: string; tools?: { allow?: string[] } }> };
       gateway?: { port?: number };
+      wizard?: {
+        rescueWatchdog?: { managed?: boolean; monitoredProfile?: string; agentId?: string };
+      };
     };
-    expect(rescueConfig.gateway?.port).toBe(19_789);
+    expect(rescueConfig.gateway?.port).toBe(result.rescuePort);
+    expect(rescueConfig.wizard?.rescueWatchdog).toEqual({
+      managed: true,
+      monitoredProfile: "work",
+      agentId: "rescue-watchdog",
+    });
+    expect(rescueConfig.agents?.list).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "rescue-watchdog",
+          tools: expect.objectContaining({
+            allow: ["exec"],
+          }),
+        }),
+      ]),
+    );
 
     const rescueStore = JSON.parse(
       await fs.readFile(path.join(rescueAgentDir, "auth-profiles.json"), "utf8"),
@@ -222,6 +279,17 @@ describe("setupRescueWatchdog", () => {
     };
     expect(rescueStore.profiles).toHaveProperty("main-key");
     expect(rescueStore.profiles).toHaveProperty("rescue-only");
+    expect(callGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "cron.add",
+        params: expect.objectContaining({
+          agentId: "rescue-watchdog",
+          payload: expect.objectContaining({
+            allowUnsafeExternalContent: false,
+          }),
+        }),
+      }),
+    );
   });
 
   it("refreshes stale rescue auth entries from the primary profile on rerun", async () => {
@@ -323,6 +391,49 @@ describe("setupRescueWatchdog", () => {
     });
 
     expect(gatewayInstall).toHaveBeenCalledTimes(1);
+    expect(gatewayRestart).not.toHaveBeenCalled();
+  });
+
+  it("refuses to clobber an existing non-watchdog rescue profile", async () => {
+    const mainStateDir = path.join(tempHome, ".openclaw-work");
+    const mainConfigPath = path.join(mainStateDir, "openclaw.json");
+    const rescueStateDir = path.join(tempHome, ".openclaw-work-rescue");
+    const rescueConfigPath = path.join(rescueStateDir, "openclaw.json");
+
+    process.env.HOME = tempHome;
+    process.env.OPENCLAW_TEST_FAST = "1";
+    process.env.OPENCLAW_PROFILE = "work";
+    process.env.OPENCLAW_STATE_DIR = mainStateDir;
+    process.env.OPENCLAW_CONFIG_PATH = mainConfigPath;
+    process.env.OPENCLAW_GATEWAY_PORT = "18789";
+
+    await fs.mkdir(mainStateDir, { recursive: true });
+    await fs.mkdir(rescueStateDir, { recursive: true });
+    await fs.writeFile(mainConfigPath, JSON.stringify({ wizard: { marker: "main" } }), "utf8");
+    await fs.writeFile(
+      rescueConfigPath,
+      JSON.stringify({
+        tools: { profile: "coding" },
+      }),
+      "utf8",
+    );
+
+    await expect(
+      setupRescueWatchdog({
+        sourceConfig: {
+          tools: { profile: "coding" },
+        },
+        workspaceDir: path.join(tempHome, "workspace-work"),
+        mainPort: 18_789,
+        monitoredProfile: "work",
+        runtime: "node",
+        output: {
+          log: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow('Rescue watchdog refused to overwrite the existing "work-rescue" profile.');
+
+    expect(gatewayInstall).not.toHaveBeenCalled();
     expect(gatewayRestart).not.toHaveBeenCalled();
   });
 });
