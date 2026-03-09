@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   resolveSessionAgentId: vi.fn(() => "agent-from-key"),
@@ -25,8 +25,11 @@ const mocks = vi.hoisted(() => ({
   })),
   normalizeChannelId: vi.fn((channel: string) => channel),
   resolveOutboundTarget: vi.fn(() => ({ ok: true as const, to: "+15550002" })),
-  deliverOutboundPayloads: vi.fn(async () => []),
+  deliverOutboundPayloads: vi.fn(async () => undefined),
+  buildOutboundSessionContext: vi.fn(() => ({ agentId: "main", sessionKey: "agent:main:main" })),
+  agentCommand: vi.fn(async () => undefined),
   enqueueSystemEvent: vi.fn(),
+  defaultRuntime: {},
 }));
 
 vi.mock("../agents/agent-scope.js", () => ({
@@ -72,6 +75,18 @@ vi.mock("../infra/outbound/deliver.js", () => ({
   deliverOutboundPayloads: mocks.deliverOutboundPayloads,
 }));
 
+vi.mock("../infra/outbound/session-context.js", () => ({
+  buildOutboundSessionContext: mocks.buildOutboundSessionContext,
+}));
+
+vi.mock("../commands/agent.js", () => ({
+  agentCommand: mocks.agentCommand,
+}));
+
+vi.mock("../runtime.js", () => ({
+  defaultRuntime: mocks.defaultRuntime,
+}));
+
 vi.mock("../infra/system-events.js", () => ({
   enqueueSystemEvent: mocks.enqueueSystemEvent,
 }));
@@ -79,16 +94,80 @@ vi.mock("../infra/system-events.js", () => ({
 const { scheduleRestartSentinelWake } = await import("./server-restart-sentinel.js");
 
 describe("scheduleRestartSentinelWake", () => {
-  it("forwards session context to outbound delivery", async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("delivers restart notice directly then resumes agent after restart", async () => {
     await scheduleRestartSentinelWake({ deps: {} as never });
 
+    // Step 1: deterministic delivery (model-independent)
     expect(mocks.deliverOutboundPayloads).toHaveBeenCalledWith(
       expect.objectContaining({
         channel: "whatsapp",
         to: "+15550002",
-        session: { key: "agent:main:main", agentId: "agent-from-key" },
+        accountId: "acct-2",
+        payloads: [{ text: "restart message" }],
+        bestEffort: true,
       }),
     );
+
+    // Step 2: agent resume turn
+    expect(mocks.agentCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "restart message",
+        sessionKey: "agent:main:main",
+        to: "+15550002",
+        channel: "whatsapp",
+        deliver: true,
+        bestEffortDeliver: true,
+        messageChannel: "whatsapp",
+        accountId: "acct-2",
+      }),
+      mocks.defaultRuntime,
+      {},
+    );
+
+    // Verify delivery happened before resume
+    const deliverOrder = mocks.deliverOutboundPayloads.mock.invocationCallOrder[0];
+    const agentOrder = mocks.agentCommand.mock.invocationCallOrder[0];
+    expect(deliverOrder).toBeLessThan(agentOrder);
+
     expect(mocks.enqueueSystemEvent).not.toHaveBeenCalled();
+  });
+
+  it("falls back to enqueueSystemEvent when agentCommand throws", async () => {
+    mocks.agentCommand.mockRejectedValueOnce(new Error("agent failed"));
+
+    await scheduleRestartSentinelWake({ deps: {} as never });
+
+    expect(mocks.enqueueSystemEvent).toHaveBeenCalledWith(
+      expect.stringContaining("restart summary"),
+      { sessionKey: "agent:main:main" },
+    );
+  });
+
+  it("falls back to enqueueSystemEvent when channel cannot be resolved (no channel in origin)", async () => {
+    mocks.resolveOutboundTarget.mockReturnValueOnce({
+      ok: false,
+      error: new Error("no-target"),
+    } as never);
+
+    await scheduleRestartSentinelWake({ deps: {} as never });
+
+    expect(mocks.agentCommand).not.toHaveBeenCalled();
+    expect(mocks.enqueueSystemEvent).toHaveBeenCalledWith("restart message", {
+      sessionKey: "agent:main:main",
+    });
+  });
+
+  it("falls back to enqueueSystemEvent on main session key when sentinel has no sessionKey", async () => {
+    mocks.consumeRestartSentinel.mockResolvedValueOnce({ payload: { sessionKey: "" } } as never);
+
+    await scheduleRestartSentinelWake({ deps: {} as never });
+
+    expect(mocks.enqueueSystemEvent).toHaveBeenCalledWith("restart message", {
+      sessionKey: "agent:main:main",
+    });
   });
 });

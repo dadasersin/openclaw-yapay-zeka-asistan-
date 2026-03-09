@@ -1518,19 +1518,22 @@ public struct ConfigApplyParams: Codable, Sendable {
     public let sessionkey: String?
     public let note: String?
     public let restartdelayms: Int?
+    public let deliverycontext: [String: AnyCodable]?
 
     public init(
         raw: String,
         basehash: String?,
         sessionkey: String?,
         note: String?,
-        restartdelayms: Int?)
+        restartdelayms: Int?,
+        deliverycontext: [String: AnyCodable]?)
     {
         self.raw = raw
         self.basehash = basehash
         self.sessionkey = sessionkey
         self.note = note
         self.restartdelayms = restartdelayms
+        self.deliverycontext = deliverycontext
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1539,6 +1542,7 @@ public struct ConfigApplyParams: Codable, Sendable {
         case sessionkey = "sessionKey"
         case note
         case restartdelayms = "restartDelayMs"
+        case deliverycontext = "deliveryContext"
     }
 }
 
@@ -1548,19 +1552,22 @@ public struct ConfigPatchParams: Codable, Sendable {
     public let sessionkey: String?
     public let note: String?
     public let restartdelayms: Int?
+    public let deliverycontext: [String: AnyCodable]?
 
     public init(
         raw: String,
         basehash: String?,
         sessionkey: String?,
         note: String?,
-        restartdelayms: Int?)
+        restartdelayms: Int?,
+        deliverycontext: [String: AnyCodable]?)
     {
         self.raw = raw
         self.basehash = basehash
         self.sessionkey = sessionkey
         self.note = note
         self.restartdelayms = restartdelayms
+        self.deliverycontext = deliverycontext
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1569,6 +1576,7 @@ public struct ConfigPatchParams: Codable, Sendable {
         case sessionkey = "sessionKey"
         case note
         case restartdelayms = "restartDelayMs"
+        case deliverycontext = "deliveryContext"
     }
 }
 
@@ -3479,17 +3487,20 @@ public struct UpdateRunParams: Codable, Sendable {
     public let note: String?
     public let restartdelayms: Int?
     public let timeoutms: Int?
+    public let deliverycontext: [String: AnyCodable]?
 
     public init(
         sessionkey: String?,
         note: String?,
         restartdelayms: Int?,
-        timeoutms: Int?)
+        timeoutms: Int?,
+        deliverycontext: [String: AnyCodable]?)
     {
         self.sessionkey = sessionkey
         self.note = note
         self.restartdelayms = restartdelayms
         self.timeoutms = timeoutms
+        self.deliverycontext = deliverycontext
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -3497,6 +3508,7 @@ public struct UpdateRunParams: Codable, Sendable {
         case note
         case restartdelayms = "restartDelayMs"
         case timeoutms = "timeoutMs"
+        case deliverycontext = "deliveryContext"
     }
 }
 

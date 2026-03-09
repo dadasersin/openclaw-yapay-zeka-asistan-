@@ -1,6 +1,7 @@
 import { resolveAnnounceTargetFromKey } from "../agents/tools/sessions-send-helpers.js";
 import { normalizeChannelId } from "../channels/plugins/index.js";
 import type { CliDeps } from "../cli/deps.js";
+import { agentCommand } from "../commands/agent.js";
 import { resolveMainSessionKeyFromConfig } from "../config/sessions.js";
 import { parseSessionThreadInfo } from "../config/sessions/delivery-info.js";
 import { deliverOutboundPayloads } from "../infra/outbound/deliver.js";
@@ -12,10 +13,11 @@ import {
   summarizeRestartSentinel,
 } from "../infra/restart-sentinel.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
+import { defaultRuntime } from "../runtime.js";
 import { deliveryContextFromSession, mergeDeliveryContext } from "../utils/delivery-context.js";
 import { loadSessionEntry } from "./session-utils.js";
 
-export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
+export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
   const sentinel = await consumeRestartSentinel();
   if (!sentinel) {
     return;
@@ -76,18 +78,13 @@ export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
     sessionThreadId ??
     (origin?.threadId != null ? String(origin.threadId) : undefined);
 
-  // Slack uses replyToId (thread_ts) for threading, not threadId.
-  // The reply path does this mapping but deliverOutboundPayloads does not,
-  // so we must convert here to ensure post-restart notifications land in
-  // the originating Slack thread. See #17716.
+  // Step 1: deliver the restart notice deterministically — model-independent, guaranteed.
+  // Slack uses replyToId (thread_ts) for threading; deliverOutboundPayloads does not do
+  // this mapping automatically, so we convert here. See #17716.
   const isSlack = channel === "slack";
   const replyToId = isSlack && threadId != null && threadId !== "" ? String(threadId) : undefined;
   const resolvedThreadId = isSlack ? undefined : threadId;
-  const outboundSession = buildOutboundSessionContext({
-    cfg,
-    sessionKey,
-  });
-
+  const outboundSession = buildOutboundSessionContext({ cfg, sessionKey });
   try {
     await deliverOutboundPayloads({
       cfg,
@@ -100,6 +97,37 @@ export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
       session: outboundSession,
       bestEffort: true,
     });
+  } catch {
+    // bestEffort: true means this should not throw, but guard anyway
+  }
+
+  // Step 2: trigger an agent resume turn so the agent can continue autonomously
+  // after restart. The model sees the restart context and can respond/take actions.
+  // This is safe post-restart: scheduleRestartSentinelWake() runs in the new process
+  // with zero in-flight replies, so the pre-restart race condition (ab4a08a82) does
+  // not apply here.
+  try {
+    await agentCommand(
+      {
+        message,
+        sessionKey,
+        to: resolved.to,
+        channel,
+        deliver: true,
+        bestEffortDeliver: true,
+        messageChannel: channel,
+        threadId,
+        accountId: origin?.accountId,
+        // Explicitly set senderIsOwner: false. The restart wake runs in a new
+        // process after an operator-triggered restart, and we cannot reliably
+        // infer the original sender's authorization level. Defaulting to false
+        // prevents a privilege escalation where any restarted session would
+        // inherit owner-level access. See #18612.
+        senderIsOwner: false,
+      },
+      defaultRuntime,
+      params.deps,
+    );
   } catch (err) {
     enqueueSystemEvent(`${summary}\n${String(err)}`, { sessionKey });
   }
