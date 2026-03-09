@@ -8,7 +8,6 @@ vi.mock("node:child_process", () => ({
   execFile: execFileMock,
 }));
 
-import { splitArgsPreservingQuotes } from "./arg-split.js";
 import { parseSystemdExecStart } from "./systemd-unit.js";
 import {
   isNonFatalSystemdInstallProbeError,
@@ -410,40 +409,6 @@ describe("resolveSystemdUserUnitPath", () => {
   });
 });
 
-describe("splitArgsPreservingQuotes", () => {
-  it("splits on whitespace outside quotes", () => {
-    expect(splitArgsPreservingQuotes('/usr/bin/openclaw gateway start --name "My Bot"')).toEqual([
-      "/usr/bin/openclaw",
-      "gateway",
-      "start",
-      "--name",
-      "My Bot",
-    ]);
-  });
-
-  it("supports systemd-style backslash escaping", () => {
-    expect(
-      splitArgsPreservingQuotes('openclaw --name "My \\"Bot\\"" --foo bar', {
-        escapeMode: "backslash",
-      }),
-    ).toEqual(["openclaw", "--name", 'My "Bot"', "--foo", "bar"]);
-  });
-
-  it("supports schtasks-style escaped quotes while preserving other backslashes", () => {
-    expect(
-      splitArgsPreservingQuotes('openclaw --path "C:\\\\Program Files\\\\OpenClaw"', {
-        escapeMode: "backslash-quote-only",
-      }),
-    ).toEqual(["openclaw", "--path", "C:\\\\Program Files\\\\OpenClaw"]);
-
-    expect(
-      splitArgsPreservingQuotes('openclaw --label "My \\"Quoted\\" Name"', {
-        escapeMode: "backslash-quote-only",
-      }),
-    ).toEqual(["openclaw", "--label", 'My "Quoted" Name']);
-  });
-});
-
 describe("parseSystemdExecStart", () => {
   it("preserves quoted arguments", () => {
     const execStart = '/usr/bin/openclaw gateway start --name "My Bot"';
@@ -458,6 +423,32 @@ describe("parseSystemdExecStart", () => {
 });
 
 describe("readSystemdServiceExecStart", () => {
+  it("parses multiline spaced ExecStart assignments", async () => {
+    const readFileSpy = vi
+      .spyOn(fs, "readFile")
+      .mockResolvedValue(
+        [
+          "[Service]",
+          "ExecStart = /usr/bin/env OPENCLAW_MODE=prod \\",
+          "  /usr/bin/openclaw gateway run",
+          "WorkingDirectory=/home/test/work",
+        ].join("\n"),
+      );
+
+    try {
+      const result = await readSystemdServiceExecStart({ HOME: "/home/test" });
+      expect(result?.programArguments).toEqual([
+        "/usr/bin/env",
+        "OPENCLAW_MODE=prod",
+        "/usr/bin/openclaw",
+        "gateway",
+        "run",
+      ]);
+      expect(result?.workingDirectory).toBe("/home/test/work");
+    } finally {
+      readFileSpy.mockRestore();
+    }
+  });
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -626,6 +617,46 @@ describe("readSystemdServiceExecStart", () => {
       OPENCLAW_GATEWAY_TOKEN: "file",
       OPENCLAW_GATEWAY_PASSWORD: "file", // pragma: allowlist secret
     });
+  });
+
+  it("preserves apostrophes in EnvironmentFile paths", async () => {
+    vi.spyOn(fs, "readFile").mockImplementation(async (pathname) => {
+      const pathValue = pathLikeToString(pathname);
+      if (pathValue.endsWith("/openclaw-gateway.service")) {
+        return [
+          "[Service]",
+          "ExecStart=/usr/bin/openclaw gateway run",
+          "EnvironmentFile=%h/.openclaw/O'Neil.env",
+        ].join("\n");
+      }
+      if (pathValue === "/home/test/.openclaw/O'Neil.env") {
+        return "OPENCLAW_GATEWAY_TOKEN=apostrophe-token\n"; // pragma: allowlist secret
+      }
+      throw new Error(`unexpected readFile path: ${pathValue}`);
+    });
+
+    const command = await readSystemdServiceExecStart({ HOME: "/home/test" });
+    expect(command?.environment?.OPENCLAW_GATEWAY_TOKEN).toBe("apostrophe-token");
+  });
+
+  it("handles backslash-escaped spaces in EnvironmentFile paths", async () => {
+    vi.spyOn(fs, "readFile").mockImplementation(async (pathname) => {
+      const pathValue = pathLikeToString(pathname);
+      if (pathValue.endsWith("/openclaw-gateway.service")) {
+        return [
+          "[Service]",
+          "ExecStart=/usr/bin/openclaw gateway run",
+          "EnvironmentFile=%h/.openclaw/My\\ File.env",
+        ].join("\n");
+      }
+      if (pathValue === "/home/test/.openclaw/My File.env") {
+        return "OPENCLAW_GATEWAY_TOKEN=escaped-space-token\n"; // pragma: allowlist secret
+      }
+      throw new Error(`unexpected readFile path: ${pathValue}`);
+    });
+
+    const command = await readSystemdServiceExecStart({ HOME: "/home/test" });
+    expect(command?.environment?.OPENCLAW_GATEWAY_TOKEN).toBe("escaped-space-token");
   });
 });
 

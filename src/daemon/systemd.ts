@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseStrictInteger, parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
-import { splitArgsPreservingQuotes } from "./arg-split.js";
 import {
   LEGACY_GATEWAY_SYSTEMD_SERVICE_NAMES,
   resolveGatewayServiceDescription,
@@ -28,6 +27,7 @@ import {
 } from "./systemd-linger.js";
 import {
   buildSystemdUnit,
+  collectSystemdExecStartValues,
   parseSystemdEnvAssignment,
   parseSystemdExecStart,
 } from "./systemd-unit.js";
@@ -64,7 +64,8 @@ export async function readSystemdServiceExecStart(
   const unitPath = resolveSystemdUnitPath(env);
   try {
     const content = await fs.readFile(unitPath, "utf8");
-    let execStart = "";
+    const execStartValues = collectSystemdExecStartValues(content);
+    const execStart = execStartValues.at(-1) ?? "";
     let workingDirectory = "";
     const inlineEnvironment: Record<string, string> = {};
     const environmentFileSpecs: string[] = [];
@@ -73,9 +74,7 @@ export async function readSystemdServiceExecStart(
       if (!line || line.startsWith("#")) {
         continue;
       }
-      if (line.startsWith("ExecStart=")) {
-        execStart = line.slice("ExecStart=".length).trim();
-      } else if (line.startsWith("WorkingDirectory=")) {
+      if (line.startsWith("WorkingDirectory=")) {
         workingDirectory = line.slice("WorkingDirectory=".length).trim();
       } else if (line.startsWith("Environment=")) {
         const raw = line.slice("Environment=".length).trim();
@@ -134,9 +133,40 @@ function expandSystemdSpecifier(input: string, env: GatewayServiceEnv): string {
 }
 
 function parseEnvironmentFileSpecs(raw: string): string[] {
-  return splitArgsPreservingQuotes(raw, { escapeMode: "backslash" })
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  // Inline split matching systemd EnvironmentFile semantics:
+  //  - backslash escapes any character (including spaces and quotes)
+  //  - double-quote grouping preserves whitespace
+  //  - single quotes (apostrophes) are literal (not grouping delimiters)
+  const specs: string[] = [];
+  let current = "";
+  let inDoubleQuotes = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const char = raw[i];
+    if (char === "\\") {
+      if (i + 1 < raw.length) {
+        current += raw[i + 1];
+        i++;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inDoubleQuotes = !inDoubleQuotes;
+      continue;
+    }
+    if (!inDoubleQuotes && /\s/.test(char)) {
+      if (current) {
+        specs.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (current) {
+    specs.push(current);
+  }
+  return specs;
 }
 
 function parseEnvironmentFileLine(rawLine: string): { key: string; value: string } | null {
