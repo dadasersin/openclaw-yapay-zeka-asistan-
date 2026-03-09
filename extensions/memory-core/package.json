@@ -5,7 +5,7 @@
   "description": "OpenClaw core memory search plugin",
   "type": "module",
   "devDependencies": {
-    "openclaw": "workspace:*"
+    "openclaw": "2026.3.8"
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.2"
