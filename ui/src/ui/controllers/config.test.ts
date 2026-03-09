@@ -459,6 +459,34 @@ describe("loadConfig", () => {
     expect(state.configRaw).toBe('{ "agents": { "defaults": { "model": "custom/raw-edit" } } }');
   });
 
+  it("updates raw mode from the snapshot when only form state is still dirty", async () => {
+    const request = vi.fn().mockResolvedValue({
+      config: { agents: { defaults: { model: "ollama/qwen3-coder:30b-64k" } } },
+      valid: true,
+      issues: [],
+      raw: '{ "agents": { "defaults": { "model": "ollama/qwen3-coder:30b-64k" } } }',
+    });
+    const state = createState();
+    state.connected = true;
+    state.client = { request } as unknown as ConfigState["client"];
+    state.configFormMode = "raw";
+    state.configFormDirty = true;
+    state.configForm = { agents: { defaults: { model: "anthropic/claude-opus-4-6" } } };
+    state.configRawOriginal =
+      '{ "agents": { "defaults": { "model": "anthropic/claude-opus-4-6" } } }';
+    state.configRaw = state.configRawOriginal;
+
+    await loadConfig(state);
+
+    expect(state.configRaw).toBe(
+      '{ "agents": { "defaults": { "model": "ollama/qwen3-coder:30b-64k" } } }',
+    );
+    expect(state.configForm).toEqual({
+      agents: { defaults: { model: "anthropic/claude-opus-4-6" } },
+    });
+    expect(state.configFormDirty).toBe(true);
+  });
+
   it("discards dirty raw edits for explicit reloads", async () => {
     const request = vi.fn().mockResolvedValue({
       config: { agents: { defaults: { model: "ollama/qwen3-coder:30b-64k" } } },

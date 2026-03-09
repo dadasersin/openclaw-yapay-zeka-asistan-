@@ -197,7 +197,7 @@ export async function handleNostrProfileSave(host: OpenClawApp) {
       error: null,
       success: "Profile published to relays.",
       fieldErrors: {},
-      original: { ...currentState.values },
+      original: { ...state.values },
     };
     await loadChannels(host, true);
   } catch (err) {

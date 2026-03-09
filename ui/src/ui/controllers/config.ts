@@ -103,9 +103,13 @@ export function applyConfigSnapshot(
       : snapshot.config && typeof snapshot.config === "object"
         ? serializeConfigForm(snapshot.config)
         : state.configRaw;
-  if (!preservePendingRawState && !preservePendingFormState) {
+  if (state.configFormMode === "raw") {
+    if (!preservePendingRawState) {
+      state.configRaw = rawFromSnapshot;
+    }
+  } else if (!preservePendingFormState) {
     state.configRaw = rawFromSnapshot;
-  } else if (state.configFormMode === "form" && state.configForm) {
+  } else if (state.configForm) {
     state.configRaw = serializeConfigForm(state.configForm);
   }
   state.configValid = typeof snapshot.valid === "boolean" ? snapshot.valid : null;
