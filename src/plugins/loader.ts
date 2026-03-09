@@ -8,7 +8,11 @@ import { openBoundaryFileSync } from "../infra/boundary-file-read.js";
 import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveUserPath } from "../utils.js";
-import { clearMemoryPromptSection } from "../memory/prompt-section.js";
+import {
+  clearMemoryPromptSection,
+  getMemoryPromptSectionBuilder,
+  restoreMemoryPromptSection,
+} from "../memory/prompt-section.js";
 import { clearPluginCommands } from "./commands.js";
 import {
   applyTestPluginDefaults,
@@ -45,7 +49,12 @@ export type PluginLoadOptions = {
   mode?: "full" | "validate";
 };
 
-const registryCache = new Map<string, PluginRegistry>();
+type CachedPluginState = {
+  registry: PluginRegistry;
+  memoryPromptBuilder: ReturnType<typeof getMemoryPromptSectionBuilder>;
+};
+
+const registryCache = new Map<string, CachedPluginState>();
 
 const defaultLogger = () => createSubsystemLogger("plugins");
 
@@ -460,8 +469,9 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   if (cacheEnabled) {
     const cached = registryCache.get(cacheKey);
     if (cached) {
-      activatePluginRegistry(cached, cacheKey);
-      return cached;
+      restoreMemoryPromptSection(cached.memoryPromptBuilder);
+      activatePluginRegistry(cached.registry, cacheKey);
+      return cached.registry;
     }
   }
 
@@ -815,7 +825,10 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   });
 
   if (cacheEnabled) {
-    registryCache.set(cacheKey, registry);
+    registryCache.set(cacheKey, {
+      registry,
+      memoryPromptBuilder: getMemoryPromptSectionBuilder(),
+    });
   }
   activatePluginRegistry(registry, cacheKey);
   return registry;
