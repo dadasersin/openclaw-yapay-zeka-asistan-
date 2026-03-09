@@ -1585,6 +1585,48 @@ describe("drainFormattedSystemEvents", () => {
   });
 });
 
+describe("initSessionState preserves modelOverride for subagent sessions (#40159)", () => {
+  it("preserves modelOverride when entry exists but resetTriggered is false", async () => {
+    // Subagent sessions: sessions.patch writes modelOverride to the store entry
+    // before the first run. The first message creates a new session (isNewSession=true)
+    // with resetTriggered=false. modelOverride must still be read from the entry.
+    const storePath = await createStorePath("openclaw-subagent-model-");
+    const sessionKey = "agent:main:subagent:sub-model-test";
+    await writeSessionStoreFast(storePath, {
+      [sessionKey]: {
+        sessionId: "pre-existing-subagent-session",
+        updatedAt: Date.now(),
+        modelOverride: "anthropic/claude-sonnet-4-6",
+        providerOverride: "anthropic",
+      },
+    });
+
+    const cfg = {
+      session: { store: storePath, idleMinutes: 999 },
+    } as OpenClawConfig;
+
+    const result = await initSessionState({
+      ctx: {
+        Body: "do some work",
+        RawBody: "do some work",
+        CommandBody: "do some work",
+        From: "parent-agent",
+        To: "bot",
+        ChatType: "direct",
+        SessionKey: sessionKey,
+        Provider: "internal",
+        Surface: "internal",
+      },
+      cfg,
+      commandAuthorized: true,
+    });
+
+    // Session is fresh and not reset-triggered, but model override must survive
+    expect(result.sessionEntry.modelOverride).toBe("anthropic/claude-sonnet-4-6");
+    expect(result.sessionEntry.providerOverride).toBe("anthropic");
+  });
+});
+
 describe("persistSessionUsageUpdate", () => {
   async function seedSessionStore(params: {
     storePath: string;
