@@ -597,11 +597,27 @@ function resolveTargetChannelHint(value: unknown): string | undefined {
   return normalizeMessageChannel(trimmed.slice(0, separatorIndex));
 }
 
-function resolveTargetsChannelHint(value: unknown): string | undefined {
-  if (!Array.isArray(value) || typeof value[0] !== "string") {
+const EXPLICIT_CHANNEL_HINT_SENTINELS = new Set(["all", "last"]);
+
+function resolveExplicitChannelHint(value: unknown): string | undefined {
+  const channel = normalizeMessageChannel(typeof value === "string" ? value : undefined);
+  if (!channel || EXPLICIT_CHANNEL_HINT_SENTINELS.has(channel)) {
     return undefined;
   }
-  return resolveTargetChannelHint(value[0]);
+  return channel;
+}
+
+function resolveTargetsChannelHint(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  for (const candidate of value) {
+    const channel = resolveTargetChannelHint(candidate);
+    if (channel) {
+      return channel;
+    }
+  }
+  return undefined;
 }
 
 function resolveMessageToolChannelHint(params: {
@@ -609,7 +625,7 @@ function resolveMessageToolChannelHint(params: {
   currentChannelProvider?: string;
 }): string | undefined {
   return (
-    normalizeMessageChannel(readStringParam(params.args, "channel")) ??
+    resolveExplicitChannelHint(params.args.channel) ??
     normalizeMessageChannel(params.currentChannelProvider) ??
     resolveTargetChannelHint(params.args.target) ??
     resolveTargetChannelHint(params.args.to) ??
