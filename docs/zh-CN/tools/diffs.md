@@ -177,7 +177,7 @@ Patch 模式：
 - 对于许多 unified patch 输入，被省略的上下文主体在解析后的 patch hunk 中不可用，因此该行可能没有展开控件。这是预期行为。
 - `expandUnchanged` 仅在存在可展开上下文时生效。
 
-## Plugin 默认配置
+## 插件默认配置
 
 在 `~/.openclaw/openclaw.json` 中设置 plugin 级默认值：
 
@@ -381,5 +381,5 @@ Diff 渲染引擎：
 ## 相关文档
 
 - [工具概览](/tools)
-- [Plugin](/tools/plugin)
+- [插件](/tools/plugin)
 - [Browser](/tools/browser)
