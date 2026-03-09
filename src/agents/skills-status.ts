@@ -59,16 +59,15 @@ function resolveSkillKey(entry: SkillEntry): string {
 }
 
 function selectPreferredInstallSpec(
-  install: SkillInstallSpec[],
+  install: Array<{ spec: SkillInstallSpec; index: number }>,
   prefs: SkillsInstallPreferences,
 ): { spec: SkillInstallSpec; index: number } | undefined {
   if (install.length === 0) {
     return undefined;
   }
 
-  const indexed = install.map((spec, index) => ({ spec, index }));
   const findKind = (kind: SkillInstallSpec["kind"]) =>
-    indexed.find((item) => item.spec.kind === kind);
+    install.find((item) => item.spec.kind === kind);
 
   const brewSpec = findKind("brew");
   const nodeSpec = findKind("node");
@@ -89,7 +88,7 @@ function selectPreferredInstallSpec(
     () => downloadSpec,
     // Last resort: surface descriptive brew-missing error instead of "no installer found".
     () => brewSpec,
-    () => indexed[0],
+    () => install[0],
   ];
 
   for (const pick of pickers) {
@@ -119,10 +118,12 @@ function normalizeInstallOptions(
   }
 
   const platform = process.platform;
-  const filtered = install.filter((spec) => {
-    const osList = spec.os ?? [];
-    return osList.length === 0 || osList.includes(platform);
-  });
+  const filtered = install
+    .map((spec, index) => ({ spec, index }))
+    .filter(({ spec }) => {
+      const osList = spec.os ?? [];
+      return osList.length === 0 || osList.includes(platform);
+    });
   if (filtered.length === 0) {
     return [];
   }
@@ -154,9 +155,9 @@ function normalizeInstallOptions(
     return { id, kind: spec.kind, label, bins };
   };
 
-  const allDownloads = filtered.every((spec) => spec.kind === "download");
+  const allDownloads = filtered.every(({ spec }) => spec.kind === "download");
   if (allDownloads) {
-    return filtered.map((spec, index) => toOption(spec, index));
+    return filtered.map(({ spec, index }) => toOption(spec, index));
   }
 
   const preferred = selectPreferredInstallSpec(filtered, prefs);

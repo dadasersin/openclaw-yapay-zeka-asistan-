@@ -9,7 +9,7 @@ function makeEntry(params: {
   os?: string[];
   requires?: { bins?: string[]; env?: string[]; config?: string[] };
   install?: Array<{
-    id: string;
+    id?: string;
     kind: "brew" | "download";
     bins?: string[];
     formula?: string;
@@ -153,5 +153,27 @@ describe("buildWorkspaceSkillStatus", () => {
     } else {
       expect(skill?.install).toEqual([]);
     }
+  });
+
+  it("preserves canonical implicit installer ids after OS filtering", () => {
+    const entry = makeEntry({
+      name: "implicit-install-id",
+      install: [
+        {
+          kind: "download",
+          os: [process.platform === "darwin" ? "linux" : "darwin"],
+          url: "https://example.com/other.tar.bz2",
+        },
+        {
+          kind: "download",
+          url: "https://example.com/current.tar.bz2",
+        },
+      ],
+    });
+
+    const report = buildWorkspaceSkillStatus("/tmp/ws", { entries: [entry] });
+    const skill = report.skills.find((reportEntry) => reportEntry.name === "implicit-install-id");
+
+    expect(skill?.install.map((opt) => opt.id)).toEqual(["download-1"]);
   });
 });
