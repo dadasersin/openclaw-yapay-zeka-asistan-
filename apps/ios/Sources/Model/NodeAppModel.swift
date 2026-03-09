@@ -1037,7 +1037,11 @@ final class NodeAppModel {
         }
         // Status pill mirrors screen recording state so it stays visible without overlay stacking.
         self.screenRecordActive = true
-        defer { self.screenRecordActive = false }
+        LiveActivityManager.shared.handleWorking(task: "Recording screen…")
+        defer {
+            self.screenRecordActive = false
+            LiveActivityManager.shared.handleWorking(task: nil)
+        }
         let path = try await self.screenRecorder.record(
             screenIndex: params.screenIndex,
             durationMs: params.durationMs,
@@ -1601,6 +1605,9 @@ private extension NodeAppModel {
             self.cameraHUDKind = kind
         }
 
+        // Mirror transient camera/recording activity to the Dynamic Island.
+        LiveActivityManager.shared.handleWorking(task: text)
+
         guard let autoHideSeconds else { return }
         self.cameraHUDDismissTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(autoHideSeconds * 1_000_000_000))
@@ -1608,6 +1615,8 @@ private extension NodeAppModel {
                 self.cameraHUDText = nil
                 self.cameraHUDKind = nil
             }
+            // Task complete — return Dynamic Island to idle.
+            LiveActivityManager.shared.handleWorking(task: nil)
         }
     }
 }
@@ -2239,8 +2248,7 @@ extension NodeAppModel {
                 from: payload)
             guard !decoded.actions.isEmpty else { return }
             self.pendingActionLogger.info(
-                "Pending actions pulled trigger=\(trigger, privacy: .public) "
-                    + "count=\(decoded.actions.count, privacy: .public)")
+                "Pending actions pulled trigger=\(trigger, privacy: .public) count=\(decoded.actions.count, privacy: .public)")
             await self.applyPendingForegroundNodeActions(decoded.actions, trigger: trigger)
         } catch {
             // Best-effort only.
@@ -2263,9 +2271,7 @@ extension NodeAppModel {
                 paramsJSON: action.paramsJSON)
             let result = await self.handleInvoke(req)
             self.pendingActionLogger.info(
-                "Pending action replay trigger=\(trigger, privacy: .public) "
-                    + "id=\(action.id, privacy: .public) command=\(action.command, privacy: .public) "
-                    + "ok=\(result.ok, privacy: .public)")
+                "Pending action replay trigger=\(trigger, privacy: .public) id=\(action.id, privacy: .public) command=\(action.command, privacy: .public) ok=\(result.ok, privacy: .public)")
             guard result.ok else { return }
             let acked = await self.ackPendingForegroundNodeAction(
                 id: action.id,
@@ -2290,9 +2296,7 @@ extension NodeAppModel {
             return true
         } catch {
             self.pendingActionLogger.error(
-                "Pending action ack failed trigger=\(trigger, privacy: .public) "
-                    + "id=\(id, privacy: .public) command=\(command, privacy: .public) "
-                    + "error=\(String(describing: error), privacy: .public)")
+                "Pending action ack failed trigger=\(trigger, privacy: .public) id=\(id, privacy: .public) command=\(command, privacy: .public) error=\(String(describing: error), privacy: .public)")
             return false
         }
     }
