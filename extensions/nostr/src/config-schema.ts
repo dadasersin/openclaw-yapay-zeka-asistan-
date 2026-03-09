@@ -4,6 +4,36 @@ import { z } from "zod";
 const allowFromEntry = z.union([z.string(), z.number()]);
 
 /**
+ * Hostnames where plaintext ws:// is permitted (local development only).
+ */
+const LOCAL_WS_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Validates Nostr relay WebSocket URLs.
+ * wss:// is accepted for any host; ws:// is restricted to localhost/loopback
+ * to prevent accidental cleartext connections to remote relays.
+ * Rejects http(s), javascript, data, file, and other non-WebSocket protocols.
+ */
+const safeRelayUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (url) => {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === "wss:") return true;
+        if (parsed.protocol === "ws:") {
+          return LOCAL_WS_HOSTS.has(parsed.hostname);
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    { message: "Relay URL must use wss://, or ws:// for localhost only" },
+  );
+
+/**
  * Validates https:// URLs only (no javascript:, data:, file:, etc.)
  */
 const safeUrlSchema = z
@@ -73,7 +103,7 @@ export const NostrConfigSchema = z.object({
   privateKey: z.string().optional(),
 
   /** WebSocket relay URLs to connect to */
-  relays: z.array(z.string()).optional(),
+  relays: z.array(safeRelayUrlSchema).optional(),
 
   /** DM access policy: pairing, allowlist, open, or disabled */
   dmPolicy: z.enum(["pairing", "allowlist", "open", "disabled"]).optional(),
