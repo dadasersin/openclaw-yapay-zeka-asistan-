@@ -66,6 +66,7 @@ export function createSessionsSpawnTool(
     agentAccountId?: string;
     agentTo?: string;
     agentThreadId?: string | number;
+    currentMessageId?: string | number;
     sandboxed?: boolean;
     /** Explicit agent ID override for cron/hook sessions where session key parsing may not work. */
     requesterAgentIdOverride?: string;
@@ -183,6 +184,7 @@ export function createSessionsSpawnTool(
           agentAccountId: opts?.agentAccountId,
           agentTo: opts?.agentTo,
           agentThreadId: opts?.agentThreadId,
+          currentMessageId: opts?.currentMessageId,
           agentGroupId: opts?.agentGroupId,
           agentGroupChannel: opts?.agentGroupChannel,
           agentGroupSpace: opts?.agentGroupSpace,
