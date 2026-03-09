@@ -263,6 +263,26 @@ export abstract class MemoryManagerSyncOps {
     // Set it on every open so concurrent processes retry instead of
     // failing immediately with SQLITE_BUSY.
     db.exec("PRAGMA busy_timeout = 5000");
+    // WAL mode survives SIGTERM mid-write; default DELETE journal corrupts on crash.
+    // busy_timeout above already retries for 5 s on SQLITE_BUSY, but if the lock
+    // still cannot be acquired (e.g. two processes racing on a brand-new DB), we
+    // degrade gracefully rather than aborting manager construction entirely.
+    // Once a DB is in WAL mode the header persists it, so this becomes a no-op
+    // on every subsequent open and never needs a lock.
+    try {
+      const row = db.prepare("PRAGMA journal_mode = WAL").get() as
+        | { journal_mode: string }
+        | undefined;
+      if (row?.journal_mode !== "wal") {
+        log.warn(
+          `memory index: WAL mode unavailable (got ${row?.journal_mode ?? "unknown"}); database may be vulnerable to corruption on SIGTERM`,
+        );
+      }
+    } catch (err) {
+      log.warn(
+        `memory index: could not enable WAL mode (${(err as Error).message}); database may be vulnerable to corruption on SIGTERM`,
+      );
+    }
     return db;
   }
 
