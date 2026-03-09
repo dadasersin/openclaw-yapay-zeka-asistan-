@@ -28,6 +28,10 @@ import { stripMarkdown } from "../line/markdown-to-line.js";
 import { isVoiceCompatibleAudio } from "../media/audio.js";
 import { CONFIG_DIR, resolveUserPath } from "../utils.js";
 import {
+  buildTtsProviderRegistryAsync as buildPluginTtsRegistry,
+  getTtsProvider as getPluginTtsProvider,
+} from "./providers.js";
+import {
   DEFAULT_OPENAI_BASE_URL,
   edgeTTS,
   elevenLabsTTS,
@@ -573,6 +577,7 @@ export async function textToSpeech(params: {
     };
   }
 
+  const pluginTtsRegistry = await buildPluginTtsRegistry();
   const userProvider = getTtsProvider(config, prefsPath);
   const overrideProvider = params.overrides?.provider;
   const provider = overrideProvider ?? userProvider;
@@ -581,6 +586,50 @@ export async function textToSpeech(params: {
   const errors: string[] = [];
 
   for (const provider of providers) {
+    const pluginTtsProvider = getPluginTtsProvider(provider, pluginTtsRegistry);
+    if (pluginTtsProvider) {
+      const providerStart = Date.now();
+      try {
+        const apiKey = resolveTtsApiKey(config, provider) ?? "";
+        let model: string | undefined;
+        let voice: string | undefined;
+        if (provider === "openai") {
+          model = params.overrides?.openai?.model;
+          voice = params.overrides?.openai?.voice;
+        } else if (provider === "elevenlabs") {
+          model = params.overrides?.elevenlabs?.modelId;
+        }
+        const result = await pluginTtsProvider.textToSpeech({
+          text: params.text,
+          model,
+          voice,
+          apiKey,
+          timeoutMs: config.timeoutMs,
+        });
+
+        const tempRoot = resolvePreferredOpenClawTmpDir();
+        mkdirSync(tempRoot, { recursive: true, mode: 0o700 });
+        const tempDir = mkdtempSync(path.join(tempRoot, "tts-"));
+        const audioPath = path.join(
+          tempDir,
+          `voice-${Date.now()}.${result.mime.split("/")[1] || "mp3"}`,
+        );
+        writeFileSync(audioPath, result.audio);
+        scheduleCleanup(tempDir);
+
+        return {
+          success: true,
+          audioPath,
+          latencyMs: Date.now() - providerStart,
+          provider,
+          outputFormat: result.mime,
+          voiceCompatible: isVoiceCompatibleAudio({ fileName: audioPath }),
+        };
+      } catch (err) {
+        errors.push(formatTtsProviderError(provider, err));
+        continue;
+      }
+    }
     const providerStart = Date.now();
     try {
       if (provider === "edge") {
@@ -737,12 +786,37 @@ export async function textToSpeechTelephony(params: {
     };
   }
 
+  const pluginTtsRegistry = await buildPluginTtsRegistry();
   const userProvider = getTtsProvider(config, prefsPath);
   const providers = resolveTtsProviderOrder(userProvider);
 
   const errors: string[] = [];
 
   for (const provider of providers) {
+    const pluginTtsProvider = getPluginTtsProvider(provider, pluginTtsRegistry);
+    if (pluginTtsProvider) {
+      const providerStart = Date.now();
+      try {
+        const apiKey = resolveTtsApiKey(config, provider) ?? "";
+        const result = await pluginTtsProvider.textToSpeech({
+          text: params.text,
+          apiKey,
+          timeoutMs: config.timeoutMs,
+        });
+
+        return {
+          success: true,
+          audioBuffer: result.audio,
+          outputFormat: result.mime,
+          latencyMs: Date.now() - providerStart,
+          provider,
+        };
+      } catch (err) {
+        errors.push(formatTtsProviderError(provider, err));
+        continue;
+      }
+    }
+
     const providerStart = Date.now();
     try {
       if (provider === "edge") {

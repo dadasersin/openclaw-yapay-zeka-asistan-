@@ -63,6 +63,7 @@ async function getPluginMediaProviderOverrides(): Promise<
         transcribeAudio: p.transcribeAudio as MediaUnderstandingProvider["transcribeAudio"],
         describeImage: p.describeImage as MediaUnderstandingProvider["describeImage"],
         describeVideo: p.describeVideo as MediaUnderstandingProvider["describeVideo"],
+        textToSpeech: p.textToSpeech as MediaUnderstandingProvider["textToSpeech"],
       };
       overrides[p.id] = provider;
     }
