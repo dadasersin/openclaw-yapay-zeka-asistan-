@@ -103,6 +103,33 @@ export async function executeNodeHostCommand(
       "exec host=node requires a node that supports system.run (companion app or node host).",
     );
   }
+  let securityWarning = false;
+  if (params.commandSecurityConfig?.enabled !== false) {
+    const shell = String(nodeInfo?.platform ?? "")
+      .toLowerCase()
+      .startsWith("win")
+      ? "cmd"
+      : "posix";
+    const tirithExecEnv: Record<string, string> = { ...coerceEnv(process.env) };
+    const hostShellPath = getShellPathFromLoginShell({
+      env: process.env,
+      timeoutMs: resolveShellEnvFallbackTimeoutMs(process.env),
+    });
+    if (hostShellPath) {
+      tirithExecEnv.PATH = hostShellPath;
+    }
+    const securityCheck = await checkCommandSecurity(params.command, params.commandSecurityConfig, {
+      shell,
+      env: tirithExecEnv,
+    });
+    if (securityCheck.action === "block") {
+      throw new Error(`exec denied: command blocked by security scan.\n${securityCheck.summary}`);
+    }
+    if (securityCheck.action === "warn" && securityCheck.findings.length > 0) {
+      securityWarning = true;
+      params.warnings.push(`Security: ${securityCheck.summary}`);
+    }
+  }
   const argv = buildNodeShellCommand(params.command, nodeInfo?.platform);
   const prepareRaw = await callGatewayTool<{ payload?: unknown }>(
     "node.invoke",
@@ -182,33 +209,6 @@ export async function executeNodeHostCommand(
       `exec: obfuscation detected (node=${nodeQuery ?? "default"}): ${obfuscation.reasons.join(", ")}`,
     );
     params.warnings.push(`⚠️ Obfuscated command detected: ${obfuscation.reasons.join("; ")}`);
-  }
-  let securityWarning = false;
-  if (params.commandSecurityConfig?.enabled !== false) {
-    const shell = String(nodeInfo?.platform ?? "")
-      .toLowerCase()
-      .startsWith("win")
-      ? "cmd"
-      : "posix";
-    const tirithExecEnv: Record<string, string> = { ...coerceEnv(process.env) };
-    const hostShellPath = getShellPathFromLoginShell({
-      env: process.env,
-      timeoutMs: resolveShellEnvFallbackTimeoutMs(process.env),
-    });
-    if (hostShellPath) {
-      tirithExecEnv.PATH = hostShellPath;
-    }
-    const securityCheck = await checkCommandSecurity(params.command, params.commandSecurityConfig, {
-      shell,
-      env: tirithExecEnv,
-    });
-    if (securityCheck.action === "block") {
-      throw new Error(`exec denied: command blocked by security scan.\n${securityCheck.summary}`);
-    }
-    if (securityCheck.action === "warn" && securityCheck.findings.length > 0) {
-      securityWarning = true;
-      params.warnings.push(`Security: ${securityCheck.summary}`);
-    }
   }
   const requiresAsk =
     requiresExecApproval({

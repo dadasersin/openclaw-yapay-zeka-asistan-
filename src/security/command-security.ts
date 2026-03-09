@@ -81,7 +81,7 @@ export async function checkCommandSecurity(
     if (stdout.trim()) {
       try {
         const verdict = JSON.parse(stdout);
-        findings = (verdict.findings || []).map((f: Record<string, unknown>) => ({
+        findings = (verdict.findings || []).slice(0, 50).map((f: Record<string, unknown>) => ({
           rule_id: (f.rule_id as string) || "",
           severity: (f.severity as string) || "",
           title: (f.title as string) || "",
@@ -92,7 +92,8 @@ export async function checkCommandSecurity(
             .map((f) => {
               return f.severity ? `[${f.severity}] ${f.title}` : f.title;
             })
-            .join("; ");
+            .join("; ")
+            .slice(0, 500);
         }
       } catch {
         jsonParseFailed = true;
