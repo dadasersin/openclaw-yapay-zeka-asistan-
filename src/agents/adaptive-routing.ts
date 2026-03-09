@@ -256,6 +256,9 @@ function buildValidatorPrompt(
 ): string {
   const maxAssistantChars = validationCfg?.maxAssistantChars ?? DEFAULT_MAX_ASSISTANT_CHARS;
   const shouldRedact = validationCfg?.redactSecrets ?? true;
+  // Use configured minScore so the LLM calibrates its scoring to match the
+  // operator's threshold rather than always anchoring to the 0.75 default.
+  const minScore = validationCfg?.minScore ?? DEFAULT_MIN_SCORE;
 
   const truncatedOutput = assistantOutput.slice(0, maxAssistantChars);
   const finalOutput = shouldRedact ? redactSecrets(truncatedOutput) : truncatedOutput;
@@ -271,7 +274,7 @@ function buildValidatorPrompt(
     `Assistant output:\n${finalOutput || "(empty)"}`,
     "",
     'Respond with ONLY valid JSON: {"score": 0.0-1.0, "passed": true/false, "reason": "one sentence"}',
-    "Score above 0.75 = passed. Be strict: empty output, tool errors, or incomplete tasks = fail.",
+    `Score above ${minScore} = passed. Be strict: empty output, tool errors, or incomplete tasks = fail.`,
   ].join("\n");
 }
 

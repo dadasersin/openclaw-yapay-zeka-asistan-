@@ -7,6 +7,7 @@ import {
   resolveBypassReason,
   runEmbeddedPiAgentWithAdaptiveRouting,
   validateHeuristic,
+  validateWithLlm,
 } from "./adaptive-routing.js";
 import type { RunEmbeddedPiAgentParams } from "./pi-embedded-runner/run/params.js";
 import type { EmbeddedRunAttemptResult } from "./pi-embedded-runner/run/types.js";
@@ -321,6 +322,48 @@ describe("validateHeuristic", () => {
     const result = validateHeuristic(attempt, cfg);
     expect(result.score).toBeCloseTo(0.7);
     expect(result.passed).toBe(false);
+  });
+});
+
+// ─── validateWithLlm ─────────────────────────────────────────────────────────
+
+describe("validateWithLlm", () => {
+  it("passes configured minScore into the validator prompt instead of hardcoded 0.75", async () => {
+    const customMinScore = 0.9;
+    const cfg = resolveAdaptiveRoutingConfig(
+      makeAdaptiveCfg({
+        defaults: {
+          model: {
+            primary: "openai/gpt-4.1-mini",
+            fallbacks: [],
+            adaptiveRouting: {
+              enabled: true,
+              localFirstModel: "ollama/qwen2.5-coder",
+              cloudEscalationModel: "openai/gpt-4.1-mini",
+              maxEscalations: 1,
+              bypassOnExplicitOverride: true,
+              validation: {
+                mode: "llm",
+                validatorModel: "openai/gpt-4.1-nano",
+                minScore: customMinScore,
+              },
+            },
+          },
+        },
+      }),
+    )!;
+
+    let capturedPrompt = "";
+    const mockLlmRun = vi.fn(async (_provider: string, _model: string, prompt: string) => {
+      capturedPrompt = prompt;
+      return JSON.stringify({ score: 0.95, passed: true, reason: "ok" });
+    });
+
+    const attempt = makeAttemptResult({ assistantTexts: ["Result here"] });
+    await validateWithLlm(attempt, "Do something", cfg, mockLlmRun);
+
+    expect(capturedPrompt).toContain(`Score above ${customMinScore} = passed`);
+    expect(capturedPrompt).not.toContain("Score above 0.75");
   });
 });
 
