@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { collectAttackSurfaceSummaryFindings } from "./audit-extra.sync.js";
+import {
+  collectAttackSurfaceSummaryFindings,
+  collectSmallModelRiskFindings,
+} from "./audit-extra.sync.js";
 import { safeEqualSecret } from "./secret-equal.js";
 
 describe("collectAttackSurfaceSummaryFindings", () => {
@@ -31,6 +34,56 @@ describe("collectAttackSurfaceSummaryFindings", () => {
     const [finding] = collectAttackSurfaceSummaryFindings(cfg);
     expect(finding.detail).toContain("hooks.webhooks: disabled");
     expect(finding.detail).toContain("hooks.internal: disabled");
+  });
+});
+
+describe("collectSmallModelRiskFindings", () => {
+  it.each([
+    ["GEMINI_API_KEY", "gemini-env-key"],
+    ["XAI_API_KEY", "xai-env-key"],
+    ["KIMI_API_KEY", "kimi-env-key"],
+    ["MOONSHOT_API_KEY", "moonshot-env-key"],
+  ])("detects web_search exposure via env var %s", (envVar, envValue) => {
+    const findings = collectSmallModelRiskFindings({
+      cfg: {
+        agents: {
+          defaults: {
+            model: "qwen2.5-7b-instruct",
+          },
+        },
+      } satisfies OpenClawConfig,
+      env: { [envVar]: envValue } as unknown as NodeJS.ProcessEnv,
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.detail).toContain("web_search");
+    expect(findings[0]?.detail).not.toContain("web=[off]");
+  });
+
+  it("treats gemini search credentials as enabling web_search exposure", () => {
+    const findings = collectSmallModelRiskFindings({
+      cfg: {
+        agents: {
+          defaults: {
+            model: "qwen2.5-7b-instruct",
+          },
+        },
+        tools: {
+          web: {
+            search: {
+              gemini: {
+                apiKey: "gemini-key",
+              },
+            },
+          },
+        },
+      } satisfies OpenClawConfig,
+      env: {},
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.detail).toContain("web_search");
+    expect(findings[0]?.detail).not.toContain("web=[off]");
   });
 });
 
