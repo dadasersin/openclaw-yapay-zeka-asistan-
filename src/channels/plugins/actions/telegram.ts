@@ -15,7 +15,6 @@ import {
   resolveTelegramPollActionGateState,
 } from "../../../telegram/accounts.js";
 import { isTelegramInlineButtonsEnabled } from "../../../telegram/inline-buttons.js";
-import { parseTelegramTarget } from "../../../telegram/targets.js";
 import type { ChannelMessageActionAdapter, ChannelMessageActionName } from "../types.js";
 import { resolveReactionMessageId } from "./reaction-message-id.js";
 import { createUnionActionGate, listTokenSourcedAccounts } from "./shared.js";
@@ -71,17 +70,10 @@ function readTelegramMessageIdParam(
 }
 
 function readTelegramTopicIdParam(params: Record<string, unknown>): number | undefined {
-  const explicitTopicId =
+  return (
     readNumberParam(params, "topicId", { integer: true }) ??
-    readNumberParam(params, "threadId", { integer: true });
-  if (typeof explicitTopicId === "number") {
-    return explicitTopicId;
-  }
-  const targetLike = readStringParam(params, "to") ?? readStringParam(params, "chatId");
-  if (!targetLike) {
-    return undefined;
-  }
-  return parseTelegramTarget(targetLike).messageThreadId;
+    readNumberParam(params, "threadId", { integer: true })
+  );
 }
 
 export const telegramMessageActions: ChannelMessageActionAdapter = {
@@ -115,6 +107,7 @@ export const telegramMessageActions: ChannelMessageActionAdapter = {
     }
     if (isEnabled("deleteMessage")) {
       actions.add("delete");
+      actions.add("topic-delete");
     }
     if (isEnabled("editMessage")) {
       actions.add("edit");
@@ -227,13 +220,14 @@ export const telegramMessageActions: ChannelMessageActionAdapter = {
         );
       }
 
-      const topicId = readTelegramTopicIdParam(params);
-      if (typeof topicId === "number") {
+      // Backward compatibility: older tool calls may still use action=delete with thread/topic ids.
+      const legacyTopicId = readTelegramTopicIdParam(params);
+      if (typeof legacyTopicId === "number") {
         return await handleTelegramAction(
           {
             action: "deleteForumTopic",
             chatId,
-            topicId,
+            topicId: legacyTopicId,
             accountId: accountId ?? undefined,
           },
           cfg,
@@ -241,7 +235,25 @@ export const telegramMessageActions: ChannelMessageActionAdapter = {
         );
       }
 
-      throw new Error("messageId or threadId/topicId is required.");
+      throw new Error("messageId is required for action=delete.");
+    }
+
+    if (action === "topic-delete") {
+      const chatId = readTelegramChatIdParam(params);
+      const topicId = readTelegramTopicIdParam(params);
+      if (typeof topicId !== "number") {
+        throw new Error("threadId/topicId is required for action=topic-delete.");
+      }
+      return await handleTelegramAction(
+        {
+          action: "deleteForumTopic",
+          chatId,
+          topicId,
+          accountId: accountId ?? undefined,
+        },
+        cfg,
+        { mediaLocalRoots },
+      );
     }
 
     if (action === "edit") {
