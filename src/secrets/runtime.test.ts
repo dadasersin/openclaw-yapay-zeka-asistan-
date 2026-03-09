@@ -12,6 +12,15 @@ import {
   prepareSecretsRuntimeSnapshot,
 } from "./runtime.js";
 
+function createTrustedFileProvider(secretFile: string) {
+  return {
+    source: "file" as const,
+    path: secretFile,
+    mode: "json" as const,
+    ...(process.platform === "win32" ? { allowInsecurePath: true } : {}),
+  };
+}
+
 function asConfig(value: unknown): OpenClawConfig {
   return value as OpenClawConfig;
 }
@@ -41,8 +50,6 @@ describe("secrets runtime snapshot", () => {
   afterEach(() => {
     clearSecretsRuntimeSnapshot();
   });
-
-  const allowInsecureTempSecretFile = process.platform === "win32";
 
   it("resolves env refs for config and auth profiles", async () => {
     const config = asConfig({
@@ -572,12 +579,7 @@ describe("secrets runtime snapshot", () => {
         config: asConfig({
           secrets: {
             providers: {
-              default: {
-                source: "file",
-                path: secretFile,
-                mode: "json",
-                ...(allowInsecureTempSecretFile ? { allowInsecurePath: true } : {}),
-              },
+              default: createTrustedFileProvider(secretFile),
             },
           },
           models: {
@@ -671,12 +673,7 @@ describe("secrets runtime snapshot", () => {
         config: asConfig({
           secrets: {
             providers: {
-              default: {
-                source: "file",
-                path: secretFile,
-                mode: "json",
-                ...(allowInsecureTempSecretFile ? { allowInsecurePath: true } : {}),
-              },
+              default: createTrustedFileProvider(secretFile),
             },
           },
           models: {
