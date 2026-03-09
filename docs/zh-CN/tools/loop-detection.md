@@ -10,7 +10,7 @@ x-i18n:
   source_path: tools/loop-detection.md
 ---
 
-# 工具循环检测（Tool-loop Detection）
+# 工具循环检测（Tool-loop detection）
 
 OpenClaw 可以防止智能体陷入重复的工具调用模式。
 该防护功能**默认关闭**。
