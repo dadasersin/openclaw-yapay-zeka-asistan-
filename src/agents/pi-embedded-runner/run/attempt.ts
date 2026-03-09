@@ -1509,6 +1509,8 @@ export async function runEmbeddedAttempt(
       const subscription = subscribeEmbeddedPiSession({
         session: activeSession,
         runId: params.runId,
+        provider: params.provider,
+        modelId: params.modelId,
         hookRunner: getGlobalHookRunner() ?? undefined,
         verboseLevel: params.verboseLevel,
         reasoningMode: params.reasoningLevel ?? "off",
