@@ -5,7 +5,7 @@ import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-bu
 import { estimateMessagesTokens } from "../../agents/compaction.js";
 import { runWithModelFallback } from "../../agents/model-fallback.js";
 import { isCliProvider } from "../../agents/model-selection.js";
-import { runEmbeddedPiAgent } from "../../agents/pi-embedded.js";
+import { createAdaptiveEmbeddedRunner } from "../../agents/pi-embedded.js";
 import { resolveSandboxConfigForAgent, resolveSandboxRuntimeStatus } from "../../agents/sandbox.js";
 import {
   derivePromptTokens,
@@ -472,6 +472,7 @@ export async function runMemoryFlushIfNeeded(params: {
     .filter(Boolean)
     .join("\n\n");
   try {
+    const runAgent = createAdaptiveEmbeddedRunner();
     await runWithModelFallback({
       ...resolveModelFallbackOptions(params.followupRun.run),
       run: async (provider, model, runOptions) => {
@@ -489,11 +490,12 @@ export async function runMemoryFlushIfNeeded(params: {
           authProfile,
           allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
         });
-        const result = await runEmbeddedPiAgent({
+        const result = await runAgent({
           ...embeddedContext,
           ...senderContext,
           ...runBaseParams,
           trigger: "memory",
+          _hasExplicitModelOverride: params.followupRun.run.modelExplicitOverride ?? false,
           prompt: resolveMemoryFlushPromptForRun({
             prompt: memoryFlushSettings.prompt,
             cfg: params.cfg,
