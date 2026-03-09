@@ -3,6 +3,7 @@ import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { ChannelDock } from "../channels/dock.js";
 import type { ChannelPlugin } from "../channels/plugins/types.js";
 import { registerContextEngine } from "../context-engine/registry.js";
+import { registerMemoryPromptSection } from "../memory/prompt-section.js";
 import type {
   GatewayRequestHandler,
   GatewayRequestHandlers,
@@ -601,6 +602,18 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
       registerService: (service) => registerService(record, service),
       registerCommand: (command) => registerCommand(record, command),
       registerContextEngine: (id, factory) => registerContextEngine(id, factory),
+      registerMemoryPromptSection: (builder) => {
+        if (record.kind !== "memory") {
+          pushDiagnostic({
+            level: "error",
+            pluginId: record.id,
+            source: record.source,
+            message: `Only memory plugins can register a memory prompt section (plugin: ${record.id})`,
+          });
+          return;
+        }
+        registerMemoryPromptSection(builder);
+      },
       resolvePath: (input: string) => resolveUserPath(input),
       on: (hookName, handler, opts) =>
         registerTypedHook(record, hookName, handler, opts, params.hookPolicy),
