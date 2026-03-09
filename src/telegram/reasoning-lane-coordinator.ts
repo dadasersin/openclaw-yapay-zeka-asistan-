@@ -1,5 +1,4 @@
 import { formatReasoningMessage } from "../agents/pi-embedded-utils.js";
-import type { ReplyPayload } from "../auto-reply/types.js";
 import { findCodeRegions, isInsideCode } from "../shared/text/code-regions.js";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 
@@ -87,14 +86,8 @@ export function splitTelegramReasoningText(text?: string): TelegramReasoningSpli
   return { reasoningText, answerText };
 }
 
-export type BufferedFinalAnswer = {
-  payload: ReplyPayload;
-  text: string;
-};
-
 export function createTelegramReasoningStepState() {
   let reasoningStatus: "none" | "hinted" | "delivered" = "none";
-  let bufferedFinalAnswer: BufferedFinalAnswer | undefined;
 
   const noteReasoningHint = () => {
     if (reasoningStatus === "none") {
@@ -106,31 +99,13 @@ export function createTelegramReasoningStepState() {
     reasoningStatus = "delivered";
   };
 
-  const shouldBufferFinalAnswer = () => {
-    return reasoningStatus === "hinted" && !bufferedFinalAnswer;
-  };
-
-  const bufferFinalAnswer = (value: BufferedFinalAnswer) => {
-    bufferedFinalAnswer = value;
-  };
-
-  const takeBufferedFinalAnswer = (): BufferedFinalAnswer | undefined => {
-    const value = bufferedFinalAnswer;
-    bufferedFinalAnswer = undefined;
-    return value;
-  };
-
   const resetForNextStep = () => {
     reasoningStatus = "none";
-    bufferedFinalAnswer = undefined;
   };
 
   return {
     noteReasoningHint,
     noteReasoningDelivered,
-    shouldBufferFinalAnswer,
-    bufferFinalAnswer,
-    takeBufferedFinalAnswer,
     resetForNextStep,
   };
 }

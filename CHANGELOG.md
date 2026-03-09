@@ -11,6 +11,7 @@ Docs: https://docs.openclaw.ai
 ### Fixes
 
 - macOS/LaunchAgent install: tighten LaunchAgent directory and plist permissions during install so launchd bootstrap does not fail when the target home path or generated plist inherited group/world-writable modes.
+- Telegram/streaming: keep one answer preview lane per inbound turn and never send a replacement final text bubble when preview finalization edits fail, fixing duplicate split replies during streamed answers.
 
 ## 2026.3.8
 

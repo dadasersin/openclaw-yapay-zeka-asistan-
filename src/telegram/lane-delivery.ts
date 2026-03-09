@@ -1,5 +1,4 @@
 export {
-  type ArchivedPreview,
   createLaneTextDeliverer,
   type DraftLaneState,
   type LaneDeliveryResult,
