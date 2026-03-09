@@ -292,6 +292,36 @@ describe("validateHeuristic", () => {
     expect(result.score).toBeGreaterThanOrEqual(0);
     expect(result.score).toBeLessThanOrEqual(1);
   });
+
+  it("minScore is functional: timeout alone passes when minScore is set low enough", () => {
+    // timeout deducts -0.3 → score=0.7. With minScore=0.6 it should pass.
+    const lowMinCfg = resolveAdaptiveRoutingConfig({
+      agents: {
+        defaults: {
+          model: {
+            adaptiveRouting: {
+              enabled: true,
+              localFirstModel: "ollama/q",
+              cloudEscalationModel: "openai/gpt-4.1-mini",
+              validation: { minScore: 0.6 },
+            },
+          },
+        },
+      },
+    } as unknown as import("../config/config.js").OpenClawConfig)!;
+    const attempt = makeAttemptResult({ timedOut: true, assistantTexts: ["partial..."] });
+    const result = validateHeuristic(attempt, lowMinCfg);
+    expect(result.score).toBeCloseTo(0.7);
+    expect(result.passed).toBe(true);
+  });
+
+  it("minScore is functional: timeout fails when minScore is above the resulting score", () => {
+    // timeout deducts -0.3 → score=0.7. With default minScore=0.75 it should fail.
+    const attempt = makeAttemptResult({ timedOut: true, assistantTexts: ["partial..."] });
+    const result = validateHeuristic(attempt, cfg);
+    expect(result.score).toBeCloseTo(0.7);
+    expect(result.passed).toBe(false);
+  });
 });
 
 // ─── runEmbeddedPiAgentWithAdaptiveRouting ───────────────────────────────────
@@ -420,6 +450,34 @@ describe("runEmbeddedPiAgentWithAdaptiveRouting", () => {
     expect(capturedSessionFiles[0]).toContain(originalSessionFile);
     // Cloud run used the original file
     expect(capturedSessionFiles[1]).toBe(originalSessionFile);
+  });
+
+  it("includeLocalAttemptSummary injects local attempt context into cloud run extraSystemPrompt", async () => {
+    const cfg = makeAdaptiveCfg();
+    (
+      cfg.agents!.defaults!.model as {
+        adaptiveRouting: { includeLocalAttemptSummary: boolean };
+      }
+    ).adaptiveRouting.includeLocalAttemptSummary = true;
+
+    const capturedExtraPrompts: (string | undefined)[] = [];
+
+    const runFn = vi.fn().mockImplementation(async (p: RunEmbeddedPiAgentParams) => {
+      capturedExtraPrompts.push(p.extraSystemPrompt);
+      if (p.provider === "ollama") {
+        p._onAttemptResult?.(makeAttemptResult({ assistantTexts: [] }));
+        return makeRunResult({ payloads: [] });
+      }
+      return makeRunResult({ payloads: [{ text: "cloud answer" }] });
+    });
+
+    await runEmbeddedPiAgentWithAdaptiveRouting(makeParams({ config: cfg }), runFn);
+
+    expect(runFn).toHaveBeenCalledTimes(2);
+    // Cloud run extraSystemPrompt should contain the local attempt summary
+    const cloudPrompt = capturedExtraPrompts[1];
+    expect(cloudPrompt).toBeDefined();
+    expect(cloudPrompt).toContain("local model attempted this request");
   });
 
   it("existing provider failover still works: provider error on local triggers escalation", async () => {

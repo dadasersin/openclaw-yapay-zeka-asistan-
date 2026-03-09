@@ -216,12 +216,21 @@ export function validateHeuristic(
   }
 
   score = Math.max(0, Math.min(1, score));
-  const passed = score >= minScore && failReasons.length === 0;
+  // Use score as the sole pass gate so operators can tune minScore meaningfully.
+  // Each penalty both reduces score and records a reason; failReasons is kept
+  // for logging only — not as an independent boolean gate — so that a run with
+  // only minor issues (e.g. a single timeout) can still pass when minScore is
+  // set lower than the default 0.75.
+  const passed = score >= minScore;
 
   return {
     passed,
     score,
-    reason: passed ? "ok" : failReasons.join(", "),
+    reason: passed
+      ? "ok"
+      : failReasons.length > 0
+        ? failReasons.join(", ")
+        : "score_below_threshold",
   };
 }
 
@@ -436,6 +445,9 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
 
   let localAttemptResult: EmbeddedRunAttemptResult | undefined;
   let localTrialFailed = false;
+  // Hoisted so the escalation block can access validation result for logging
+  // and for includeLocalAttemptSummary context injection.
+  let localValidation: ValidationResult | undefined;
 
   try {
     let localResult: EmbeddedPiRunResult;
@@ -508,6 +520,8 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
         validation = validateHeuristic(localAttemptResult, arCfg);
       }
 
+      localValidation = validation;
+
       log.info(
         `[adaptive-routing] local validation: passed=${validation.passed} score=${validation.score.toFixed(2)} reason=${validation.reason}`,
       );
@@ -557,6 +571,14 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
     // runWithModelFallback retries with another candidate.
     params._onAdaptiveEscalation?.();
 
+    // When includeLocalAttemptSummary is set, inject a short redacted summary of
+    // the local attempt into the cloud run's system prompt so the cloud model can
+    // avoid repeating the same approach. Only injected on escalation (not bypass).
+    const localSummaryExtra =
+      arCfg.includeLocalAttemptSummary && localAttemptResult
+        ? buildLocalAttemptSummary(localAttemptResult, localValidation, arCfg)
+        : undefined;
+
     let cloudResult: EmbeddedPiRunResult;
     try {
       cloudResult = await runFn({
@@ -564,6 +586,9 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
         provider: cloudProvider,
         model: cloudModel,
         sessionFile: originalSessionFile,
+        extraSystemPrompt: localSummaryExtra
+          ? [params.extraSystemPrompt, localSummaryExtra].filter(Boolean).join("\n\n")
+          : params.extraSystemPrompt,
       });
     } catch (cloudErr) {
       // If the cloud escalation model also fails, let the error propagate up
@@ -580,9 +605,11 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
       localModel: `${localProvider}/${localModel}`,
       cloudModel: `${cloudProvider}/${cloudModel}`,
       validationMode,
-      validationScore: localTrialFailed ? 0 : 0,
+      validationScore: localValidation?.score ?? 0,
       validationPassed: false,
-      validationReason: localTrialFailed ? "local_trial_error" : "validation_failed",
+      validationReason: localTrialFailed
+        ? "local_trial_error"
+        : (localValidation?.reason ?? "validation_failed"),
       escalated: true,
     });
     void recordAdaptiveRun(resolveStateDir(), {
@@ -641,12 +668,48 @@ function validateFromRunResult(
   }
 
   score = Math.max(0, Math.min(1, score));
-  const passed = score >= minScore && failReasons.length === 0;
+  const passed = score >= minScore;
   return {
     passed,
     score,
-    reason: passed ? "ok" : failReasons.join(", "),
+    reason: passed
+      ? "ok"
+      : failReasons.length > 0
+        ? failReasons.join(", ")
+        : "score_below_threshold",
   };
+}
+
+/**
+ * Build a short, redacted summary of the local trial attempt to inject into
+ * the cloud escalation run's system prompt when includeLocalAttemptSummary is
+ * enabled. Gives the cloud model context about what the local model tried so
+ * it can take a different approach if helpful.
+ */
+function buildLocalAttemptSummary(
+  attempt: EmbeddedRunAttemptResult,
+  validation: ValidationResult | undefined,
+  cfg: AdaptiveRoutingConfig,
+): string {
+  const shouldRedact = cfg.validation?.redactSecrets ?? true;
+  const assistantText = attempt.assistantTexts.join("").trim();
+  const preview = assistantText.slice(0, 300);
+  const finalPreview = shouldRedact ? redactSecrets(preview) : preview;
+  const toolNames = attempt.toolMetas.map((t) => t.toolName).join(", ");
+
+  const lines = [
+    "[Context: A local model attempted this request but the response quality was insufficient.]",
+  ];
+  if (validation) {
+    lines.push(`Quality score: ${validation.score.toFixed(2)} | Reason: ${validation.reason}`);
+  }
+  if (toolNames) {
+    lines.push(`Tools invoked: ${toolNames}`);
+  }
+  if (finalPreview) {
+    lines.push(`Local attempt output (preview): ${finalPreview}`);
+  }
+  return lines.join("\n");
 }
 
 async function safeRename(from: string, to: string): Promise<void> {
