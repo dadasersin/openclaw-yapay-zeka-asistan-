@@ -70,6 +70,7 @@ describe("restartGatewayProcessWithFreshPid", () => {
     clearSupervisorHints();
     setPlatform("darwin");
     process.env.LAUNCH_JOB_LABEL = "ai.openclaw.gateway";
+    delete process.env.OPENCLAW_LAUNCHD_LABEL;
     const result = restartGatewayProcessWithFreshPid();
     expect(result.mode).toBe("supervised");
     expect(triggerOpenClawRestartMock).not.toHaveBeenCalled();
