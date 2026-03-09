@@ -237,7 +237,7 @@ Exa provides neural search that understands meaning, not just keywords. It retur
         provider: "exa",
         exa: {
           // API key (optional if EXA_API_KEY is set)
-          apiKey: "your-exa-key",
+          apiKey: "your-exa-key", // pragma: allowlist secret
           // Search type: "auto" (default), "neural", or "keyword"
           type: "auto",
           // Include page text snippets (default: false; costs extra)

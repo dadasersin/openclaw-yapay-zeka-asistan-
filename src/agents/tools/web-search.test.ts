@@ -399,12 +399,13 @@ describe("resolveBraveMode", () => {
 
 describe("resolveExaApiKey", () => {
   it("returns config apiKey when provided", () => {
-    expect(resolveExaApiKey({ apiKey: "exa-from-config" })).toBe("exa-from-config");
+    expect(resolveExaApiKey({ apiKey: "exa-from-config" })).toBe("exa-from-config"); // pragma: allowlist secret
   });
 
   it("falls back to EXA_API_KEY env var", () => {
-    withEnv({ EXA_API_KEY: "exa-from-env" }, () => {
-      expect(resolveExaApiKey({})).toBe("exa-from-env");
+    const exaEnvValue = "exa-from-env"; // pragma: allowlist secret
+    withEnv({ EXA_API_KEY: exaEnvValue }, () => {
+      expect(resolveExaApiKey({})).toBe(exaEnvValue);
     });
   });
 
