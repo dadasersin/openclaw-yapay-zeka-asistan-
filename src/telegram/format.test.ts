@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markdownToTelegramHtml } from "./format.js";
+import { markdownToTelegramChunks, markdownToTelegramHtml } from "./format.js";
 
 describe("markdownToTelegramHtml", () => {
   it("handles core markdown-to-telegram conversions", () => {
@@ -111,5 +111,16 @@ describe("markdownToTelegramHtml", () => {
     const res = markdownToTelegramHtml("||secret|| trailing ||");
     expect(res).toContain("<tg-spoiler>secret</tg-spoiler>");
     expect(res).toContain("trailing ||");
+  });
+});
+
+describe("markdownToTelegramChunks", () => {
+  it("backs up to a word boundary when HTML overflow forces a retry split", () => {
+    const chunks = markdownToTelegramChunks("**beta** zeta", 13);
+
+    expect(chunks).toEqual([
+      { html: "<b>beta</b>", text: "beta" },
+      { html: "zeta", text: "zeta" },
+    ]);
   });
 });
