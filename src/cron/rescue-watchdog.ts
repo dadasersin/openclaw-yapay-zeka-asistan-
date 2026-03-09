@@ -12,6 +12,7 @@ const PROBE_TIMEOUT_MS = 1_500;
 const PROBE_POLL_MS = 500;
 const RECOVERY_WAIT_DEADLINE_MS = 30_000;
 const DOCTOR_REPAIR_TIMEOUT_MS = 60_000;
+const MIN_DOCTOR_TIMEOUT_MS = 1_000;
 
 function looksLikeAuthClose(code: number | undefined, reason: string | undefined): boolean {
   if (code !== 1008) {
@@ -111,11 +112,29 @@ function buildSummary(monitoredProfile: string, actions: string[]): string {
   return `Rescue watchdog repaired "${monitoredProfile}": ${actions.join(", ")}.`;
 }
 
+function resolveRemainingJobBudgetMs(params: {
+  startedAtMs: number;
+  payload: CronJob["payload"];
+}): number | undefined {
+  if (
+    params.payload.kind !== "rescueWatchdog" ||
+    typeof params.payload.timeoutSeconds !== "number" ||
+    params.payload.timeoutSeconds <= 0
+  ) {
+    return undefined;
+  }
+  return Math.max(
+    0,
+    Math.floor(params.payload.timeoutSeconds * 1_000) - (Date.now() - params.startedAtMs),
+  );
+}
+
 export async function runRescueWatchdogJob(params: {
   job: CronJob;
   monitoredProfile: string;
   abortSignal?: AbortSignal;
 }): Promise<CronRunOutcome & CronRunTelemetry> {
+  const startedAtMs = Date.now();
   const monitoredProfile = resolveMonitoredProfileName(params.monitoredProfile);
   if (monitoredProfile !== "default" && !isValidProfileName(monitoredProfile)) {
     return {
@@ -179,18 +198,31 @@ export async function runRescueWatchdogJob(params: {
     };
   }
 
+  const remainingJobBudgetMs = resolveRemainingJobBudgetMs({
+    startedAtMs,
+    payload: params.job.payload,
+  });
+  if (typeof remainingJobBudgetMs === "number" && remainingJobBudgetMs < MIN_DOCTOR_TIMEOUT_MS) {
+    const errors = [
+      warning,
+      restartError ? `restart failed: ${restartError}` : undefined,
+      `skipped doctor fallback because only ${remainingJobBudgetMs}ms remained in the cron job budget`,
+      `probe failed: ${restartProbe.detail ?? initialProbe.detail ?? "unreachable"}`,
+    ].filter(Boolean);
+    return {
+      status: "error",
+      error: errors.join(" | "),
+      summary: actions.length > 0 ? buildSummary(monitoredProfile, actions) : undefined,
+    };
+  }
+
   // Keep the repair fallback deterministic: exact argv, no shell, no agent prompt.
   const doctorResult = await runCommandWithTimeout(
     ["openclaw", "--profile", monitoredProfile, "doctor", "--repair", "--non-interactive"],
     {
       timeoutMs:
-        params.job.payload.kind === "rescueWatchdog" &&
-        typeof params.job.payload.timeoutSeconds === "number" &&
-        params.job.payload.timeoutSeconds > 0
-          ? Math.min(
-              DOCTOR_REPAIR_TIMEOUT_MS,
-              Math.max(15_000, Math.floor(params.job.payload.timeoutSeconds * 500)),
-            )
+        typeof remainingJobBudgetMs === "number"
+          ? Math.min(DOCTOR_REPAIR_TIMEOUT_MS, remainingJobBudgetMs)
           : DOCTOR_REPAIR_TIMEOUT_MS,
       env,
     },

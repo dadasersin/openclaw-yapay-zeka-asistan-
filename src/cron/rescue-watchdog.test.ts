@@ -172,4 +172,32 @@ describe("runRescueWatchdogJob", () => {
     );
     expect(result.summary).toContain("ran doctor --repair --non-interactive");
   });
+
+  it("skips doctor when the cron timeout budget is already exhausted", async () => {
+    probeGateway.mockResolvedValue({
+      ok: false,
+      close: { code: 1006, reason: "down" },
+      error: "down",
+    });
+
+    const runPromise = runRescueWatchdogJob({
+      job: {
+        id: "job-4",
+        name: "rescue",
+        payload: {
+          kind: "rescueWatchdog",
+          monitoredProfile: "work",
+          timeoutSeconds: 5,
+        },
+      } as never,
+      monitoredProfile: "work",
+    });
+
+    await vi.advanceTimersByTimeAsync(31_000);
+    const result = await runPromise;
+
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("skipped doctor fallback");
+    expect(runCommandWithTimeout).not.toHaveBeenCalled();
+  });
 });
