@@ -413,6 +413,7 @@ function createApi(): OpenClawPluginApi {
     registerCli() {},
     registerService() {},
     registerProvider() {},
+    registerMediaProvider() {},
     registerCommand() {},
     registerContextEngine() {},
     resolvePath(input: string) {

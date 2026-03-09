@@ -241,6 +241,7 @@ function createPluginRecord(params: {
     hookNames: [],
     channelIds: [],
     providerIds: [],
+    mediaProviderIds: [],
     gatewayMethods: [],
     cliCommands: [],
     services: [],
