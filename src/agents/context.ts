@@ -41,8 +41,12 @@ export function applyDiscoveredContextWindows(params: {
       continue;
     }
     const existing = params.cache.get(model.id);
-    // When multiple providers expose the same model id with different limits,
-    // prefer the smaller window so token budgeting is fail-safe (no overestimation).
+    // When the same bare model id appears under multiple providers with different
+    // limits, keep the smaller window. This cache feeds both display paths and
+    // runtime paths (flush thresholds, session context-token persistence), so
+    // overestimating the limit could delay compaction and cause context overflow.
+    // Callers that know the active provider should use resolveContextTokensForModel,
+    // which tries the provider-qualified key first and falls back here.
     if (existing === undefined || contextWindow < existing) {
       params.cache.set(model.id, contextWindow);
     }
@@ -57,7 +61,7 @@ export function applyConfiguredContextWindows(params: {
   if (!providers || typeof providers !== "object") {
     return;
   }
-  for (const provider of Object.values(providers)) {
+  for (const [providerId, provider] of Object.entries(providers)) {
     if (!Array.isArray(provider?.models)) {
       continue;
     }
@@ -69,6 +73,12 @@ export function applyConfiguredContextWindows(params: {
         continue;
       }
       params.cache.set(modelId, contextWindow);
+      // Always store under the provider-qualified key so that qualified lookups
+      // in resolveContextTokensForModel respect explicit config overrides over
+      // discovered values. This covers both bare IDs (e.g. "claude-opus-4" →
+      // "anthropic/claude-opus-4") and slash-containing IDs common in OpenRouter
+      // (e.g. "anthropic/claude-sonnet-4-5" → "openrouter/anthropic/claude-sonnet-4-5").
+      params.cache.set(`${providerId}/${modelId}`, contextWindow);
     }
   }
 }
@@ -269,5 +279,13 @@ export function resolveContextTokensForModel(params: {
     }
   }
 
-  return lookupContextTokens(params.model) ?? params.fallbackContextTokens;
+  // When provider is known, prefer the provider-qualified key so the correct
+  // entry is found even when the same bare model id is catalogued under
+  // multiple providers with different context limits.
+  const qualifiedKey = ref ? `${ref.provider}/${ref.model}` : undefined;
+  return (
+    (qualifiedKey ? lookupContextTokens(qualifiedKey) : undefined) ??
+    lookupContextTokens(params.model) ??
+    params.fallbackContextTokens
+  );
 }
