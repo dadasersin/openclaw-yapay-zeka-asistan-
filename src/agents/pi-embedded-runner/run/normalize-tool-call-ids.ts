@@ -63,7 +63,6 @@ export function normalizeToolCallIdsInMessage(message: unknown): void {
           typedBlock.id = trimmedId;
         }
         assignedIds.add(trimmedId);
-        usedIds.add(trimmedId);
         continue;
       }
     }

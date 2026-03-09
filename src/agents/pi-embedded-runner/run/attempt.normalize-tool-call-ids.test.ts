@@ -66,7 +66,7 @@ describe("normalizeToolCallIdsInMessage", () => {
     expect(new Set(ids).size).toBe(5);
   });
 
-  it("is a no-op for non-tool-use content blocks", () => {
+  it("is a no-op for non-tool content blocks", () => {
     const message = {
       content: [
         { type: "text", text: "hello" },
@@ -76,6 +76,22 @@ describe("normalizeToolCallIdsInMessage", () => {
     normalizeToolCallIdsInMessage(message);
     expect(message.content[0]).toEqual({ type: "text", text: "hello" });
     expect(message.content[1].id).toBe("call_1");
+  });
+
+  it("handles toolCall and functionCall variants", () => {
+    const message = {
+      content: [
+        { type: "toolCall", id: "dup", name: "exec" },
+        { type: "functionCall", id: "dup", name: "read" },
+        { type: "functionCall", id: "", name: "write" },
+      ],
+    };
+    normalizeToolCallIdsInMessage(message);
+    const ids = message.content.map((b) => b.id);
+    expect(ids[0]).toBe("dup");
+    expect(ids[1]).toMatch(/^call_auto_/);
+    expect(ids[2]).toMatch(/^call_auto_/);
+    expect(new Set(ids).size).toBe(3);
   });
 
   it("handles null/undefined message gracefully", () => {
