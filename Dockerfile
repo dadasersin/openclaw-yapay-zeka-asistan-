@@ -202,6 +202,33 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
         docker-ce-cli docker-compose-plugin; \
     fi
 
+# Optional: Install Linuxbrew for skill dependency management.
+# Build with: docker build --build-arg OPENCLAW_INSTALL_BREW=1 ...
+# Adds ~500MB but enables brew-based skill installation (uv, go, signal-cli, etc.)
+ARG OPENCLAW_INSTALL_BREW=""
+RUN if [ -n "$OPENCLAW_INSTALL_BREW" ]; then \
+      apt-get update && \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential curl file git procps && \
+      if ! id -u linuxbrew >/dev/null 2>&1; then useradd -m -s /bin/bash linuxbrew; fi && \
+      mkdir -p /home/linuxbrew/.linuxbrew && \
+      chown -R linuxbrew:linuxbrew /home/linuxbrew && \
+      curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o /tmp/brew-install.sh && \
+      su - linuxbrew -c "NONINTERACTIVE=1 CI=1 /bin/bash /tmp/brew-install.sh" && \
+      rm -f /tmp/brew-install.sh && \
+      if [ ! -e /home/linuxbrew/.linuxbrew/Library ]; then ln -s /home/linuxbrew/.linuxbrew/Homebrew/Library /home/linuxbrew/.linuxbrew/Library; fi && \
+      if [ ! -x /home/linuxbrew/.linuxbrew/bin/brew ]; then echo "brew install failed"; exit 1; fi && \
+      chown -R node:node /home/linuxbrew/.linuxbrew && \
+      apt-get clean && \
+      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+    fi
+# Homebrew env vars: only meaningful when OPENCLAW_INSTALL_BREW=1, but
+# harmless when the directories don't exist (brew won't be found in PATH).
+# Docker ENV doesn't support conditionals, so we set them unconditionally.
+ENV HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew
+ENV HOMEBREW_CELLAR=/home/linuxbrew/.linuxbrew/Cellar
+ENV HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
+
 # Expose the CLI binary without requiring npm global writes as non-root.
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
  && chmod 755 /app/openclaw.mjs
