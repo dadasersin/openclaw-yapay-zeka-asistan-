@@ -22,6 +22,7 @@ const {
   resolveKimiModel,
   resolveKimiBaseUrl,
   extractKimiCitations,
+  resolveGeminiApiKey,
   resolveBraveMode,
 } = __testing;
 
@@ -343,6 +344,41 @@ describe("web_search kimi config resolution", () => {
   it("resolves default model and baseUrl", () => {
     expect(resolveKimiModel({})).toBe("moonshot-v1-128k");
     expect(resolveKimiBaseUrl({})).toBe("https://api.moonshot.ai/v1");
+  });
+});
+
+describe("web_search provider apiKey SecretRef handling", () => {
+  // Unresolved SecretRef objects must fail fast, not silently drop the key
+  const secretRef = { source: "exec", provider: "vault", id: "test-key" };
+
+  it("throws on unresolved SecretRef for Perplexity apiKey", () => {
+    expect(() => resolvePerplexityApiKey({ apiKey: secretRef as unknown as string })).toThrow(
+      /unresolved SecretRef/,
+    );
+  });
+
+  it("throws on unresolved SecretRef for Grok apiKey", () => {
+    withEnv({ XAI_API_KEY: undefined }, () => {
+      expect(() => resolveGrokApiKey({ apiKey: secretRef as unknown as string })).toThrow(
+        /unresolved SecretRef/,
+      );
+    });
+  });
+
+  it("throws on unresolved SecretRef for Kimi apiKey", () => {
+    withEnv({ KIMI_API_KEY: undefined, MOONSHOT_API_KEY: undefined }, () => {
+      expect(() => resolveKimiApiKey({ apiKey: secretRef as unknown as string })).toThrow(
+        /unresolved SecretRef/,
+      );
+    });
+  });
+
+  it("throws on unresolved SecretRef for Gemini apiKey", () => {
+    withEnv({ GEMINI_API_KEY: undefined }, () => {
+      expect(() => resolveGeminiApiKey({ apiKey: secretRef as unknown as string })).toThrow(
+        /unresolved SecretRef/,
+      );
+    });
   });
 });
 
