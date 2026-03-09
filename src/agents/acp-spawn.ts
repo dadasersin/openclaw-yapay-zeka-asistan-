@@ -4,6 +4,10 @@ import {
   cleanupFailedAcpSpawn,
   type AcpSpawnRuntimeCloseHandle,
 } from "../acp/control-plane/spawn.js";
+import {
+  buildTelegramTopicConversationId,
+  parseTelegramTopicConversation,
+} from "../acp/conversation-id.js";
 import { isAcpEnabledByPolicy, resolveAcpAgentPolicyError } from "../acp/policy.js";
 import {
   resolveAcpSessionCwd,
@@ -30,10 +34,13 @@ import { resolveConversationIdFromTargets } from "../infra/outbound/conversation
 import {
   getSessionBindingService,
   isSessionBindingError,
+  type SessionBindingPlacement,
   type SessionBindingRecord,
 } from "../infra/outbound/session-binding-service.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import { deriveSessionChatType } from "../sessions/session-key-utils.js";
+import { parseTelegramTarget } from "../telegram/targets.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import {
   type AcpSpawnParentRelayHandle,
@@ -112,6 +119,7 @@ type PreparedAcpThreadBinding = {
   channel: string;
   accountId: string;
   conversationId: string;
+  placement: SessionBindingPlacement;
 };
 
 function resolveSpawnMode(params: {
@@ -213,13 +221,125 @@ async function persistAcpSpawnSessionFileBestEffort(params: {
 }
 
 function resolveConversationIdForThreadBinding(params: {
+  channel?: string;
   to?: string;
   threadId?: string | number;
 }): string | undefined {
+  const channel = params.channel?.trim().toLowerCase();
+  const explicitThreadId =
+    params.threadId != null ? String(params.threadId).trim() || undefined : undefined;
+  if (channel === "telegram") {
+    const rawTarget = params.to?.trim() || "";
+    if (!rawTarget) {
+      return explicitThreadId;
+    }
+    const parsedTarget = parseTelegramTarget(rawTarget);
+    const chatId = parsedTarget.chatId.trim();
+    if (!chatId) {
+      return explicitThreadId;
+    }
+    const topicId =
+      explicitThreadId ??
+      (parsedTarget.messageThreadId != null
+        ? String(parsedTarget.messageThreadId).trim()
+        : undefined);
+    if (topicId) {
+      return (
+        buildTelegramTopicConversationId({
+          chatId,
+          topicId,
+        }) ?? topicId
+      );
+    }
+    return chatId;
+  }
   return resolveConversationIdFromTargets({
     threadId: params.threadId,
     targets: [params.to],
   });
+}
+
+function resolveAcpThreadBindingPlacement(params: {
+  channel: string;
+  requesterSessionKey?: string;
+  threadId?: string | number;
+}): SessionBindingPlacement {
+  if (params.channel === "telegram") {
+    return "current";
+  }
+  if (params.channel === "discord") {
+    const threadId =
+      params.threadId != null ? String(params.threadId).trim() || undefined : undefined;
+    if (threadId) {
+      return "current";
+    }
+    if (deriveSessionChatType(params.requesterSessionKey) === "direct") {
+      return "current";
+    }
+  }
+  return "child";
+}
+
+function resolveAcpInlineDeliveryTarget(params: {
+  binding?: SessionBindingRecord | null;
+  requesterOrigin?: {
+    channel?: string;
+    to?: string;
+    threadId?: string | number;
+  };
+  requesterSessionKey?: string;
+}): { to?: string; threadId?: string } {
+  const requesterTo = params.requesterOrigin?.to?.trim() || undefined;
+  const requesterThreadId =
+    params.requesterOrigin?.threadId != null
+      ? String(params.requesterOrigin.threadId).trim() || undefined
+      : undefined;
+  const conversationId = params.binding?.conversation.conversationId?.trim() || "";
+  if (!conversationId) {
+    return {
+      to: requesterTo,
+      ...(requesterThreadId ? { threadId: requesterThreadId } : {}),
+    };
+  }
+
+  const channel = (params.requesterOrigin?.channel ?? params.binding?.conversation.channel ?? "")
+    .trim()
+    .toLowerCase();
+  if (channel === "telegram") {
+    const parsedTopic = parseTelegramTopicConversation({
+      conversationId,
+      parentConversationId: params.binding?.conversation.parentConversationId,
+    });
+    if (parsedTopic) {
+      return {
+        to: `telegram:${parsedTopic.chatId}`,
+        threadId: parsedTopic.topicId,
+      };
+    }
+    return {
+      to: `telegram:${conversationId}`,
+    };
+  }
+
+  if (channel === "discord") {
+    if (deriveSessionChatType(params.requesterSessionKey) === "direct") {
+      return {
+        to: requesterTo || `channel:${conversationId}`,
+      };
+    }
+    const parentConversationId = params.binding?.conversation.parentConversationId?.trim() || "";
+    return {
+      to:
+        requesterTo ||
+        (parentConversationId ? `channel:${parentConversationId}` : `channel:${conversationId}`),
+      threadId: conversationId,
+    };
+  }
+
+  return {
+    to: requesterTo,
+    ...(requesterThreadId ? { threadId: requesterThreadId } : {}),
+  };
 }
 
 function prepareAcpThreadBinding(params: {
@@ -228,6 +348,7 @@ function prepareAcpThreadBinding(params: {
   accountId?: string;
   to?: string;
   threadId?: string | number;
+  requesterSessionKey?: string;
 }): { ok: true; binding: PreparedAcpThreadBinding } | { ok: false; error: string } {
   const channel = params.channel?.trim().toLowerCase();
   if (!channel) {
@@ -275,13 +396,14 @@ function prepareAcpThreadBinding(params: {
       error: `Thread bindings are unavailable for ${policy.channel}.`,
     };
   }
-  if (!capabilities.bindSupported || !capabilities.placements.includes("child")) {
+  if (!capabilities.bindSupported) {
     return {
       ok: false,
-      error: `Thread bindings do not support ACP thread spawn for ${policy.channel}.`,
+      error: `Thread bindings are unavailable for ${policy.channel}.`,
     };
   }
   const conversationId = resolveConversationIdForThreadBinding({
+    channel: policy.channel,
     to: params.to,
     threadId: params.threadId,
   });
@@ -291,6 +413,17 @@ function prepareAcpThreadBinding(params: {
       error: `Could not resolve a ${policy.channel} conversation for ACP thread spawn.`,
     };
   }
+  const placement = resolveAcpThreadBindingPlacement({
+    channel: policy.channel,
+    requesterSessionKey: params.requesterSessionKey,
+    threadId: params.threadId,
+  });
+  if (!capabilities.placements.includes(placement)) {
+    return {
+      ok: false,
+      error: `Thread bindings do not support ACP ${placement} placement for ${policy.channel}.`,
+    };
+  }
 
   return {
     ok: true,
@@ -298,6 +431,7 @@ function prepareAcpThreadBinding(params: {
       channel: policy.channel,
       accountId: policy.accountId,
       conversationId,
+      placement,
     },
   };
 }
@@ -380,6 +514,7 @@ export async function spawnAcpDirect(
       accountId: ctx.agentAccountId,
       to: ctx.agentTo,
       threadId: ctx.agentThreadId,
+      requesterSessionKey: ctx.agentSessionKey,
     });
     if (!prepared.ok) {
       return {
@@ -443,7 +578,7 @@ export async function spawnAcpDirect(
           accountId: preparedBinding.accountId,
           conversationId: preparedBinding.conversationId,
         },
-        placement: "child",
+        placement: preparedBinding.placement,
         metadata: {
           threadName: resolveThreadBindingThreadName({
             agentId: targetAgentId,
@@ -475,7 +610,9 @@ export async function spawnAcpDirect(
       });
       if (!binding?.conversation.conversationId) {
         throw new Error(
-          `Failed to create and bind a ${preparedBinding.channel} thread for this ACP session.`,
+          preparedBinding.placement === "child"
+            ? `Failed to create and bind a ${preparedBinding.channel} thread for this ACP session.`
+            : `Failed to bind this ${preparedBinding.channel} conversation to the ACP session.`,
         );
       }
       if (sessionId) {
@@ -514,16 +651,13 @@ export async function spawnAcpDirect(
     to: ctx.agentTo,
     threadId: ctx.agentThreadId,
   });
-  // For thread-bound ACP spawns, force bootstrap delivery to the new child thread.
-  const boundThreadIdRaw = binding?.conversation.conversationId;
-  const boundThreadId = boundThreadIdRaw ? String(boundThreadIdRaw).trim() || undefined : undefined;
-  const fallbackThreadIdRaw = requesterOrigin?.threadId;
-  const fallbackThreadId =
-    fallbackThreadIdRaw != null ? String(fallbackThreadIdRaw).trim() || undefined : undefined;
-  const deliveryThreadId = boundThreadId ?? fallbackThreadId;
-  const inferredDeliveryTo = boundThreadId
-    ? `channel:${boundThreadId}`
-    : requesterOrigin?.to?.trim() || (deliveryThreadId ? `channel:${deliveryThreadId}` : undefined);
+  const inlineDeliveryTarget = resolveAcpInlineDeliveryTarget({
+    binding,
+    requesterOrigin,
+    requesterSessionKey: ctx.agentSessionKey,
+  });
+  const deliveryThreadId = inlineDeliveryTarget.threadId;
+  const inferredDeliveryTo = inlineDeliveryTarget.to;
   const hasDeliveryTarget = Boolean(requesterOrigin?.channel && inferredDeliveryTo);
   // Fresh one-shot ACP runs should bootstrap the worker first, then let higher layers
   // decide how to relay status. Inline delivery is reserved for thread-bound sessions.
