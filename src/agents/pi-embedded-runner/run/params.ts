@@ -85,6 +85,10 @@ export type RunEmbeddedPiAgentParams = {
   bootstrapContextMode?: "full" | "lightweight";
   /** Run kind hint for context mode behavior. */
   bootstrapContextRunKind?: "default" | "heartbeat" | "cron";
+  /** Seen bootstrap truncation warning signatures for this session (once mode dedupe). */
+  bootstrapPromptWarningSignaturesSeen?: string[];
+  /** Last shown bootstrap truncation warning signature for this session. */
+  bootstrapPromptWarningSignature?: string;
   execOverrides?: Pick<ExecToolDefaults, "host" | "security" | "ask" | "node">;
   bashElevated?: ExecElevatedDefaults;
   timeoutMs: number;
@@ -110,29 +114,11 @@ export type RunEmbeddedPiAgentParams = {
   ownerNumbers?: string[];
   enforceFinalTag?: boolean;
   /**
-   * Internal hook for adaptive model routing.
-   * Called with the raw attempt result on the success path so the wrapper can
-   * validate outcome quality without re-inspecting the final EmbeddedPiRunResult.
-   * Not for general use.
+   * Allow a single run attempt even when all auth profiles are in cooldown,
+   * but only for inferred transient cooldowns like `rate_limit` or `overloaded`.
+   *
+   * This is used by model fallback when trying sibling models on providers
+   * where transient service pressure is often model-scoped.
    */
-  _onAttemptResult?: (attempt: import("./types.js").EmbeddedRunAttemptResult) => void;
-  /**
-   * Internal flag for adaptive routing: indicates an explicit per-run model
-   * override was provided (CLI/env/API). Used to enforce bypassOnExplicitOverride.
-   * Not for general use.
-   */
-  _hasExplicitModelOverride?: boolean;
-  /**
-   * Internal flag: true when adaptive routing already escalated to the cloud model
-   * earlier in this runWithModelFallback chain. Prevents re-running the local model
-   * on subsequent fallback retries after cloud escalation fails.
-   * Set by the outer closure via _onAdaptiveEscalation.
-   */
-  _adaptiveEscalationDone?: boolean;
-  /**
-   * Callback invoked by the adaptive routing wrapper immediately before the cloud
-   * escalation run. The outer runWithModelFallback closure uses this to flip
-   * _adaptiveEscalationDone for subsequent retry invocations.
-   */
-  _onAdaptiveEscalation?: () => void;
+  allowTransientCooldownProbe?: boolean;
 };
