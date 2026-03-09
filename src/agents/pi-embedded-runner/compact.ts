@@ -69,6 +69,7 @@ import {
 import { resolveTranscriptPolicy } from "../transcript-policy.js";
 import {
   compactWithSafetyTimeout,
+  EMBEDDED_COMPACTION_RETRY_TIMEOUT_MS,
   EMBEDDED_COMPACTION_TIMEOUT_MS,
 } from "./compaction-safety-timeout.js";
 import { buildEmbeddedExtensionFactories } from "./extensions.js";
@@ -90,6 +91,7 @@ import {
   createSystemPromptOverride,
 } from "./system-prompt.js";
 import { collectAllowedToolNames } from "./tool-name-allowlist.js";
+import { truncateOversizedToolResultsInMessages } from "./tool-result-truncation.js";
 import { splitSdkTools } from "./tool-split.js";
 import type { EmbeddedPiCompactResult } from "./types.js";
 import { describeUnknownError, mapThinkingLevel } from "./utils.js";
@@ -791,9 +793,60 @@ export async function compactEmbeddedPiSessionDirect(
         // Measure compactedCount from the original pre-limiting transcript so compaction
         // lifecycle metrics represent total reduction through the compaction pipeline.
         const messageCountCompactionInput = messageCountOriginal;
-        const result = await compactWithSafetyTimeout(() =>
-          session.compact(params.customInstructions),
-        );
+
+        // Attempt compaction; if it times out, truncate oversized tool results and retry once.
+        // On timeout we call session.abortCompaction() so the dangling first compact skips its
+        // agent.replaceMessages() call (agent-session.js:1175 guards it behind an abort-signal
+        // check), preventing stale messages from corrupting session state after the retry below.
+        // We also suppress the resulting "Compaction cancelled" rejection via .catch() to avoid
+        // an unhandled-rejection crash. Requires @mariozechner/pi-coding-agent >=0.55.3.
+        let result: Awaited<ReturnType<typeof session.compact>>;
+        let retried = false;
+        let backgroundCompact: Promise<unknown> | undefined;
+        try {
+          result = await compactWithSafetyTimeout(() => {
+            backgroundCompact = session.compact(params.customInstructions);
+            return backgroundCompact as ReturnType<typeof session.compact>;
+          });
+          backgroundCompact = undefined; // settled cleanly
+        } catch (firstErr) {
+          const isTimeout =
+            firstErr instanceof Error &&
+            (firstErr.message.toLowerCase().includes("timed out") ||
+              firstErr.message.toLowerCase().includes("timeout"));
+          if (!isTimeout) {
+            backgroundCompact = undefined;
+            throw firstErr;
+          }
+          // Abort the timed-out first compact so it skips replaceMessages() (see comment above).
+          session.abortCompaction();
+          // Suppress the "Compaction cancelled" rejection to avoid an unhandled-rejection crash.
+          backgroundCompact?.catch(() => {});
+          backgroundCompact = undefined;
+          // Timeout: truncate oversized tool results (large DOM responses) to reduce context,
+          // then retry with a shorter safety timeout.
+          log.warn(
+            `[compaction] initial compaction timed out after ${EMBEDDED_COMPACTION_TIMEOUT_MS / 1000}s; ` +
+              `truncating oversized tool results and retrying (diagId=${diagId})`,
+          );
+          const contextWindowTokens = ctxInfo.tokens;
+          const { messages: reducedMessages, truncatedCount } =
+            truncateOversizedToolResultsInMessages(session.messages, contextWindowTokens);
+          if (truncatedCount > 0) {
+            log.info(
+              `[compaction] pre-retry: truncated ${truncatedCount} oversized tool result(s) ` +
+                `to reduce context before retry (diagId=${diagId})`,
+            );
+            session.agent.replaceMessages(reducedMessages);
+          }
+          // Retry with shorter timeout. If this also times out, the error propagates to the
+          // outer catch which returns fail("Compaction timed out").
+          retried = true;
+          result = await compactWithSafetyTimeout(
+            () => session.compact(params.customInstructions),
+            EMBEDDED_COMPACTION_RETRY_TIMEOUT_MS,
+          );
+        }
         // Estimate tokens after compaction by summing token estimates for remaining messages
         let tokensAfter: number | undefined;
         try {
@@ -817,7 +870,7 @@ export async function compactEmbeddedPiSessionDirect(
             `[compaction-diag] end runId=${runId} sessionKey=${params.sessionKey ?? params.sessionId} ` +
               `diagId=${diagId} trigger=${trigger} provider=${provider}/${modelId} ` +
               `attempt=${attempt} maxAttempts=${maxAttempts} outcome=compacted reason=none ` +
-              `durationMs=${Date.now() - compactStartedAt} retrying=false ` +
+              `durationMs=${Date.now() - compactStartedAt} retried=${retried} ` +
               `post.messages=${postMetrics.messages} post.historyTextChars=${postMetrics.historyTextChars} ` +
               `post.toolResultChars=${postMetrics.toolResultChars} post.estTokens=${postMetrics.estTokens ?? "unknown"} ` +
               `delta.messages=${postMetrics.messages - preMetrics.messages} ` +
