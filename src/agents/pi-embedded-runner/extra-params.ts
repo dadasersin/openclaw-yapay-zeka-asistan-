@@ -13,6 +13,7 @@ import {
 } from "./anthropic-stream-wrappers.js";
 import { log } from "./logger.js";
 import {
+  createMoonshotRateLimitRetryWrapper,
   createMoonshotThinkingWrapper,
   createSiliconFlowThinkingWrapper,
   resolveMoonshotThinkingType,
@@ -384,6 +385,13 @@ export function applyExtraParamsToAgent(
       );
     }
     agent.streamFn = createMoonshotThinkingWrapper(agent.streamFn, moonshotThinkingType);
+  }
+
+  // Apply rate-limit retry for Moonshot-backed providers (moonshot + kimi-coding).
+  // Both share Moonshot's infrastructure and return HTTP 429 on rate limit.
+  if (provider === "moonshot" || provider === "kimi-coding") {
+    log.debug(`applying Moonshot rate-limit retry wrapper for ${provider}/${modelId}`);
+    agent.streamFn = createMoonshotRateLimitRetryWrapper(agent.streamFn);
   }
 
   agent.streamFn = createAnthropicToolPayloadCompatibilityWrapper(agent.streamFn);
