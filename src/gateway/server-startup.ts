@@ -6,6 +6,7 @@ import {
   getModelRefStatus,
   resolveConfiguredModelRef,
   resolveHooksGmailModel,
+  resolveHooksWsEventsModel,
 } from "../agents/model-selection.js";
 import { resolveAgentSessionDirs } from "../agents/session-dirs.js";
 import { cleanStaleLockFiles } from "../agents/session-write-lock.js";
@@ -19,6 +20,7 @@ import {
   triggerInternalHook,
 } from "../hooks/internal-hooks.js";
 import { loadInternalHooks } from "../hooks/loader.js";
+import { startWsEventsWatcherWithLogs } from "../hooks/ws-events-watcher-lifecycle.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import type { loadOpenClawPlugins } from "../plugins/loader.js";
 import { type PluginServicesHandle, startPluginServices } from "../plugins/services.js";
@@ -75,6 +77,12 @@ export async function startGatewaySidecars(params: {
     log: params.logHooks,
   });
 
+  // Start workspace events watcher if configured (hooks.workspaceEvents.target).
+  await startWsEventsWatcherWithLogs({
+    cfg: params.cfg,
+    log: params.logHooks,
+  });
+
   // Validate hooks.gmail.model if configured.
   if (params.cfg.hooks?.gmail?.model) {
     const hooksModelRef = resolveHooksGmailModel({
@@ -103,6 +111,39 @@ export async function startGatewaySidecars(params: {
       if (!status.inCatalog) {
         params.logHooks.warn(
           `hooks.gmail.model "${status.key}" not in the model catalog (may fail at runtime)`,
+        );
+      }
+    }
+  }
+
+  // Validate hooks.workspaceEvents.model if configured.
+  if (params.cfg.hooks?.workspaceEvents?.model) {
+    const wsEventsModelRef = resolveHooksWsEventsModel({
+      cfg: params.cfg,
+      defaultProvider: DEFAULT_PROVIDER,
+    });
+    if (wsEventsModelRef) {
+      const { provider: defaultProvider, model: defaultModel } = resolveConfiguredModelRef({
+        cfg: params.cfg,
+        defaultProvider: DEFAULT_PROVIDER,
+        defaultModel: DEFAULT_MODEL,
+      });
+      const catalog = await loadModelCatalog({ config: params.cfg });
+      const status = getModelRefStatus({
+        cfg: params.cfg,
+        catalog,
+        ref: wsEventsModelRef,
+        defaultProvider,
+        defaultModel,
+      });
+      if (!status.allowed) {
+        params.logHooks.warn(
+          `hooks.workspaceEvents.model "${status.key}" not in agents.defaults.models allowlist (will use primary instead)`,
+        );
+      }
+      if (!status.inCatalog) {
+        params.logHooks.warn(
+          `hooks.workspaceEvents.model "${status.key}" not in the model catalog (may fail at runtime)`,
         );
       }
     }
