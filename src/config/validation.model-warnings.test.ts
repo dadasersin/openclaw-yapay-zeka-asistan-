@@ -59,7 +59,7 @@ describe("collectModelConfigWarnings", () => {
     expect(collectModelConfigWarnings(cfg, CATALOG)).toEqual([]);
   });
 
-  it("returns no warnings with an empty catalog", () => {
+  it("still warns when the catalog is empty (cannot validate)", () => {
     const cfg = makeConfig({
       agents: { defaults: { model: { primary: "anthropic/claude-sonnet-4-6" } } },
     });
