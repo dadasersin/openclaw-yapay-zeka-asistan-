@@ -1,7 +1,12 @@
-import { chromium } from "playwright-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as chromeModule from "./chrome.js";
-import { closePlaywrightBrowserConnection, getPageForTargetId } from "./pw-session.js";
+
+vi.mock("./extension-relay.js", () => ({
+  getChromeExtensionRelayAuthHeaders: () => ({}),
+}));
+
+const { chromium } = await import("playwright-core");
+const chromeModule = await import("./chrome.js");
+const { closePlaywrightBrowserConnection, getPageForTargetId } = await import("./pw-session.js");
 
 const connectOverCdpSpy = vi.spyOn(chromium, "connectOverCDP");
 const getChromeWebSocketUrlSpy = vi.spyOn(chromeModule, "getChromeWebSocketUrl");
@@ -71,15 +76,19 @@ describe("pw-session getPageForTargetId", () => {
       }),
     } as unknown as import("playwright-core").BrowserContext;
 
+    const pageAEmulateMedia = vi.fn(async () => {});
+    const pageBEmulateMedia = vi.fn(async () => {});
     const pageA = {
       on: pageOn,
       context: () => context,
       url: () => "https://alpha.example",
+      emulateMedia: pageAEmulateMedia,
     } as unknown as import("playwright-core").Page;
     const pageB = {
       on: pageOn,
       context: () => context,
       url: () => "https://beta.example",
+      emulateMedia: pageBEmulateMedia,
     } as unknown as import("playwright-core").Page;
 
     (context as unknown as { pages: () => unknown[] }).pages = () => [pageA, pageB];
@@ -131,15 +140,19 @@ describe("pw-session getPageForTargetId", () => {
       newCDPSession,
     } as unknown as import("playwright-core").BrowserContext;
 
+    const pageAEmulateMedia = vi.fn(async () => {});
+    const pageBEmulateMedia = vi.fn(async () => {});
     const pageA = {
       on: pageOn,
       context: () => context,
       url: () => "https://alpha.example",
+      emulateMedia: pageAEmulateMedia,
     } as unknown as import("playwright-core").Page;
     const pageB = {
       on: pageOn,
       context: () => context,
       url: () => "https://beta.example",
+      emulateMedia: pageBEmulateMedia,
     } as unknown as import("playwright-core").Page;
 
     (context as unknown as { pages: () => unknown[] }).pages = () => [pageA, pageB];
@@ -174,6 +187,8 @@ describe("pw-session getPageForTargetId", () => {
       });
       expect(resolved).toBe(pageB);
       expect(newCDPSession).not.toHaveBeenCalled();
+      expect(pageAEmulateMedia).toHaveBeenCalledWith({ colorScheme: null });
+      expect(pageBEmulateMedia).toHaveBeenCalledWith({ colorScheme: null });
     } finally {
       fetchSpy.mockRestore();
     }
