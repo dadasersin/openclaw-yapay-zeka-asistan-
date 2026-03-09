@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { Command } from "commander";
 import {
   computeSavingsMetrics,
@@ -60,8 +62,6 @@ export function registerAdaptiveRoutingCli(program: Command) {
         };
         fresh.since = new Date().toISOString();
         fresh.lastUpdated = fresh.since;
-        const { writeFile, mkdir } = await import("node:fs/promises");
-        const { default: path } = await import("node:path");
         await mkdir(path.dirname(savingsFilePath(stateDir)), { recursive: true });
         await writeFile(savingsFilePath(stateDir), JSON.stringify(fresh, null, 2), "utf8");
         defaultRuntime.log(theme.success("\nLedger reset."));

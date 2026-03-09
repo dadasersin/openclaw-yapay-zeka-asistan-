@@ -476,6 +476,9 @@ function runAgentAttempt(params: {
     currentThreadTs: params.runContext.currentThreadTs,
     replyToMode: params.runContext.replyToMode,
     hasRepliedRef: params.runContext.hasRepliedRef,
+    // senderIsOwner is required on AgentCommandOpts (always a boolean), so the
+    // ?? true fallback is defensive-only and never triggers in practice. CLI
+    // agent runs are always owner-initiated, so true is the correct default.
     senderIsOwner: params.opts.senderIsOwner ?? true,
     sessionFile: params.sessionFile,
     workspaceDir: params.workspaceDir,

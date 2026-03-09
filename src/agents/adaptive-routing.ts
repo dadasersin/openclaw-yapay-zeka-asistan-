@@ -321,8 +321,10 @@ export async function validateWithLlm(
 
   try {
     const raw = await llmRun(vProvider, vModel, prompt);
-    // Extract JSON from response (may have extra text)
-    const jsonMatch = raw.match(/\{[\s\S]*?\}/);
+    // Greedy match to capture the outermost JSON object. Non-greedy (*?) would
+    // stop at the first "}" which breaks when the reason field itself contains "}"
+    // (e.g. "Truncated at 80%}"), yielding malformed JSON and a spurious escalation.
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       log.warn("[adaptive-routing] LLM validator returned no JSON; treating as FAIL");
       return { passed: false, score: 0, reason: "validator_no_json" };
