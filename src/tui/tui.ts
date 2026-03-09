@@ -803,7 +803,7 @@ export async function runTui(opts: TuiOptions) {
     abortActive,
   } = sessionActions;
 
-  const { handleChatEvent, handleAgentEvent } = createEventHandlers({
+  const { handleChatEvent, handleAgentEvent, resetRunTracking } = createEventHandlers({
     chatLog,
     tui,
     state,
@@ -950,6 +950,7 @@ export async function runTui(opts: TuiOptions) {
     isConnected = false;
     wasDisconnected = true;
     historyLoaded = false;
+    resetRunTracking();
     const disconnectState = resolveGatewayDisconnectState(reason);
     setConnectionStatus(disconnectState.connectionStatus, 5000);
     setActivityStatus(disconnectState.activityStatus);
