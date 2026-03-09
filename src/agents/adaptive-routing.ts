@@ -12,6 +12,7 @@
  * Default: disabled. Enable via agents.defaults.model.adaptiveRouting.
  */
 
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
@@ -438,7 +439,7 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
 
   // ── Local run in a temp session file ──────────────────────────────────────
   const originalSessionFile = params.sessionFile;
-  const tempSessionFile = `${originalSessionFile}.adaptive-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  const tempSessionFile = `${originalSessionFile}.adaptive-${Date.now()}-${process.pid}-${randomBytes(4).toString("hex")}`;
 
   // Copy existing session (conversation history) to temp file before local run.
   await fs.copyFile(originalSessionFile, tempSessionFile).catch((err: NodeJS.ErrnoException) => {
