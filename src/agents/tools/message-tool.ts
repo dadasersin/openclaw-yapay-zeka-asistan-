@@ -603,9 +603,9 @@ function resolveMessageToolChannelHint(params: {
 }): string | undefined {
   return (
     normalizeMessageChannel(readStringParam(params.args, "channel")) ??
+    normalizeMessageChannel(params.currentChannelProvider) ??
     resolveTargetChannelHint(params.args.target) ??
-    resolveTargetChannelHint(params.args.to) ??
-    normalizeMessageChannel(params.currentChannelProvider)
+    resolveTargetChannelHint(params.args.to)
   );
 }
 
