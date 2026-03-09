@@ -8,14 +8,14 @@ x-i18n:
   source_path: channels/synology-chat.md
 ---
 
-# Synology Chat（plugin）
+# Synology Chat（插件）
 
-状态：通过 plugin 支持，作为使用 Synology Chat webhook 的直接消息频道。
-该 plugin 接收来自 Synology Chat outgoing webhook 的入站消息，并通过 Synology Chat incoming webhook 发送回复。
+状态：通过插件支持，作为使用 Synology Chat webhook 的直接消息频道。
+该插件接收来自 Synology Chat outgoing webhook 的入站消息，并通过 Synology Chat incoming webhook 发送回复。
 
-## 需要安装 Plugin
+## 需要安装插件
 
-Synology Chat 基于 plugin，不包含在默认的核心频道安装中。
+Synology Chat 基于插件，不包含在默认的核心频道安装中。
 
 从本地检出安装：
 
