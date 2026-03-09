@@ -89,7 +89,7 @@ export function createProcessSupervisor(): ProcessSupervisor {
     const noOutputTimeoutMs = clampTimeout(input.noOutputTimeoutMs);
 
     const setForcedReason = (reason: TerminationReason) => {
-      if (forcedReason) {
+      if (settled || forcedReason) {
         return;
       }
       forcedReason = reason;
@@ -208,6 +208,15 @@ export function createProcessSupervisor(): ProcessSupervisor {
         clearTimers();
         adapter.dispose();
         active.delete(runId);
+        // Yield to the event loop so that any stdout/stderr data events
+        // still queued in the I/O phase are delivered before we snapshot
+        // stdout/stderr.  This closes a race where block-buffered child
+        // output (e.g. bun on a pipe inside Docker) is flushed at exit
+        // and the data callback fires in the same libuv poll cycle as
+        // the 'close' event.  The yield is placed after settled/timers/
+        // active cleanup so that cancel() cannot set forcedReason during
+        // the gap (the run is no longer in active).  #30711
+        await new Promise<void>((resolve) => setImmediate(resolve));
 
         const reason: TerminationReason =
           forcedReason ?? (result.signal != null ? ("signal" as const) : ("exit" as const));
