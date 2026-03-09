@@ -28,7 +28,12 @@ import {
   resolveContextWindowInfo,
 } from "../context-window-guard.js";
 import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
-import { FailoverError, resolveFailoverStatus } from "../failover-error.js";
+import {
+  coerceToFailoverError,
+  describeFailoverError,
+  FailoverError,
+  resolveFailoverStatus,
+} from "../failover-error.js";
 import {
   ensureAuthProfileStore,
   getApiKeyForModel,
@@ -1154,7 +1159,17 @@ export async function runEmbeddedPiAgent(
           }
 
           if (promptError && !aborted) {
-            const errorText = describeUnknownError(promptError);
+            // Normalize wrapped errors (e.g. abort-wrapped RESOURCE_EXHAUSTED) into
+            // FailoverError so rate-limit classification works even for nested shapes.
+            const normalizedPromptFailover = coerceToFailoverError(promptError, {
+              provider: activeErrorContext.provider,
+              model: activeErrorContext.model,
+              profileId: lastProfileId,
+            });
+            const promptErrorDetails = normalizedPromptFailover
+              ? describeFailoverError(normalizedPromptFailover)
+              : describeFailoverError(promptError);
+            const errorText = promptErrorDetails.message || describeUnknownError(promptError);
             if (await maybeRefreshCopilotForAuthError(errorText, copilotAuthRetry)) {
               authRetryPending = true;
               continue;
@@ -1218,14 +1233,16 @@ export async function runEmbeddedPiAgent(
                 },
               };
             }
-            const promptFailoverReason = classifyFailoverReason(errorText);
+            const promptFailoverReason =
+              promptErrorDetails.reason ?? classifyFailoverReason(errorText);
             const promptProfileFailureReason =
               resolveAuthProfileFailureReason(promptFailoverReason);
             await maybeMarkAuthProfileFailure({
               profileId: lastProfileId,
               reason: promptProfileFailureReason,
             });
-            const promptFailoverFailure = isFailoverErrorMessage(errorText);
+            const promptFailoverFailure =
+              promptFailoverReason !== null || isFailoverErrorMessage(errorText);
             if (
               promptFailoverFailure &&
               promptFailoverReason !== "timeout" &&
@@ -1250,13 +1267,16 @@ export async function runEmbeddedPiAgent(
             // rate-limit, auth, or billing failures.
             if (fallbackConfigured && promptFailoverFailure) {
               await maybeBackoffBeforeOverloadFailover(promptFailoverReason);
-              throw new FailoverError(errorText, {
-                reason: promptFailoverReason ?? "unknown",
-                provider,
-                model: modelId,
-                profileId: lastProfileId,
-                status: resolveFailoverStatus(promptFailoverReason ?? "unknown"),
-              });
+              throw (
+                normalizedPromptFailover ??
+                new FailoverError(errorText, {
+                  reason: promptFailoverReason ?? "unknown",
+                  provider,
+                  model: modelId,
+                  profileId: lastProfileId,
+                  status: resolveFailoverStatus(promptFailoverReason ?? "unknown"),
+                })
+              );
             }
             throw promptError;
           }
