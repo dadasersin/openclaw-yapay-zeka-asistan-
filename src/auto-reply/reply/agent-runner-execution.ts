@@ -335,6 +335,7 @@ export async function runAgentTurnWithFallback(params: {
               ...senderContext,
               ...runBaseParams,
               prompt: params.commandBody,
+              _hasExplicitModelOverride: params.followupRun.run.modelExplicitOverride ?? false,
               extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
               toolResultFormat: (() => {
                 const channel = resolveMessageChannel(
