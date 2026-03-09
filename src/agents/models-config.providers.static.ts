@@ -137,6 +137,17 @@ const QIANFAN_DEFAULT_COST = {
   cacheWrite: 0,
 };
 
+export const AIPING_BASE_URL = "https://aiping.cn/api/v1";
+export const AIPING_DEFAULT_MODEL_ID = "DeepSeek-V3.2";
+const AIPING_DEFAULT_CONTEXT_WINDOW = 131072;
+const AIPING_DEFAULT_MAX_TOKENS = 8192;
+const AIPING_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const NVIDIA_DEFAULT_MODEL_ID = "nvidia/llama-3.1-nemotron-70b-instruct";
 const NVIDIA_DEFAULT_CONTEXT_WINDOW = 131072;
@@ -379,6 +390,33 @@ export function buildQianfanProvider(): ProviderConfig {
         cost: QIANFAN_DEFAULT_COST,
         contextWindow: 119000,
         maxTokens: 64000,
+      },
+    ],
+  };
+}
+
+export function buildAipingProvider(): ProviderConfig {
+  return {
+    baseUrl: AIPING_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: AIPING_DEFAULT_MODEL_ID,
+        name: "DeepSeek V3.2",
+        reasoning: false,
+        input: ["text"],
+        cost: AIPING_DEFAULT_COST,
+        contextWindow: AIPING_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: AIPING_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "Auto",
+        name: "AIPing Auto",
+        reasoning: false,
+        input: ["text"],
+        cost: AIPING_DEFAULT_COST,
+        contextWindow: AIPING_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: AIPING_DEFAULT_MAX_TOKENS,
       },
     ],
   };
