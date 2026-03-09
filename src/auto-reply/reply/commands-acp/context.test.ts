@@ -90,25 +90,6 @@ describe("commands-acp context", () => {
     expect(isAcpCommandDiscordChannel(params)).toBe(false);
   });
 
-  it("keeps Slack thread conversation ids thread-scoped when NativeChannelId is present", () => {
-    const params = buildCommandTestParams("/acp spawn codex --thread here", baseCfg, {
-      Provider: "slack",
-      Surface: "slack",
-      OriginatingChannel: "slack",
-      OriginatingTo: "channel:C12345GHIJK",
-      NativeChannelId: "C12345GHIJK",
-      MessageThreadId: "1741512345.678900",
-    });
-
-    expect(resolveAcpCommandBindingContext(params)).toEqual({
-      channel: "slack",
-      accountId: "default",
-      threadId: "1741512345.678900",
-      conversationId: "1741512345.678900",
-    });
-    expect(resolveAcpCommandConversationId(params)).toBe("1741512345.678900");
-  });
-
   it("builds canonical telegram topic conversation ids from originating chat + thread", () => {
     const params = buildCommandTestParams("/acp status", baseCfg, {
       Provider: "telegram",
@@ -146,16 +127,16 @@ describe("commands-acp context", () => {
     expect(resolveAcpCommandConversationId(params)).toBe("123456789");
   });
 
-  it("builds canonical Feishu thread conversation ids from chat + root message", () => {
+  it("prefers a thread-scoped Feishu NativeChannelId for topic bindings", () => {
     const params = buildCommandTestParams("/acp status", baseCfg, {
       Provider: "feishu",
       Surface: "feishu",
       OriginatingChannel: "feishu",
-      OriginatingTo: "chat:oc_thread_chat",
+      OriginatingTo: "chat:oc_topic_group",
       AccountId: "work",
-      NativeChannelId: "oc_thread_chat:thread:om_root_42",
+      NativeChannelId: "oc_topic_group:thread:om_root_42",
       MessageThreadId: "om_root_42",
-      ThreadParentId: "oc_thread_chat",
+      ThreadParentId: "oc_topic_group",
       RootMessageId: "om_root_42",
     });
 
@@ -163,53 +144,8 @@ describe("commands-acp context", () => {
       channel: "feishu",
       accountId: "work",
       threadId: "om_root_42",
-      conversationId: "oc_thread_chat:thread:om_root_42",
-      parentConversationId: undefined,
+      conversationId: "oc_topic_group:thread:om_root_42",
     });
-    expect(resolveAcpCommandConversationId(params)).toBe("oc_thread_chat:thread:om_root_42");
-  });
-
-  it("uses NativeChannelId as the canonical Feishu conversation outside an active thread", () => {
-    const params = buildCommandTestParams("/acp spawn codex --thread auto", baseCfg, {
-      Provider: "feishu",
-      Surface: "feishu",
-      OriginatingChannel: "feishu",
-      OriginatingTo: "user:ou_requester",
-      AccountId: "work",
-      NativeChannelId: "oc_dm_chat",
-      MessageSid: "om_seed_42",
-    });
-
-    expect(resolveAcpCommandBindingContext(params)).toEqual({
-      channel: "feishu",
-      accountId: "work",
-      threadId: undefined,
-      conversationId: "oc_dm_chat",
-      currentMessageId: "om_seed_42",
-    });
-    expect(resolveAcpCommandConversationId(params)).toBe("oc_dm_chat");
-  });
-
-  it("uses a plugin-provided Feishu thread-scoped NativeChannelId when root_id is absent", () => {
-    const params = buildCommandTestParams("/acp spawn codex --thread here", baseCfg, {
-      Provider: "feishu",
-      Surface: "feishu",
-      OriginatingChannel: "feishu",
-      OriginatingTo: "chat:oc_thread_chat",
-      AccountId: "work",
-      NativeChannelId: "oc_thread_chat:thread:om_followup_99",
-      ThreadParentId: "oc_thread_chat",
-      MessageSid: "om_followup_99",
-    });
-
-    expect(resolveAcpCommandBindingContext(params)).toEqual({
-      channel: "feishu",
-      accountId: "work",
-      threadId: undefined,
-      conversationId: "oc_thread_chat:thread:om_followup_99",
-      parentConversationId: undefined,
-      currentMessageId: "om_followup_99",
-    });
-    expect(resolveAcpCommandConversationId(params)).toBe("oc_thread_chat:thread:om_followup_99");
+    expect(resolveAcpCommandConversationId(params)).toBe("oc_topic_group:thread:om_root_42");
   });
 });

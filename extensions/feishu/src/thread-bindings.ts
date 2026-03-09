@@ -690,37 +690,16 @@ export function createFeishuThreadBindingManager(
     channel: "feishu",
     accountId,
     capabilities: {
-      placements: ["current", "child"],
+      placements: ["current"],
     },
     bind: async (input) => {
       if (input.conversation.channel !== "feishu") {
         return null;
       }
-      let conversationId = normalizeConversationId(input.conversation.conversationId);
+      const conversationId = normalizeConversationId(input.conversation.conversationId);
       const targetSessionKey = input.targetSessionKey.trim();
       if (!targetSessionKey) {
         return null;
-      }
-      if (input.placement === "child") {
-        const parentConversationId =
-          normalizeConversationId(input.conversation.parentConversationId) ?? conversationId;
-        const sourceMessageIdRaw =
-          typeof input.metadata?.sourceMessageId === "string"
-            ? input.metadata.sourceMessageId
-            : typeof input.metadata?.sourceMessageId === "number"
-              ? String(input.metadata.sourceMessageId)
-              : "";
-        const sourceMessageId = normalizeConversationId(sourceMessageIdRaw);
-        if (!parentConversationId || !sourceMessageId) {
-          console.warn(
-            `feishu thread bindings: child placement requires parent conversation and source message id (account=${accountId})`,
-          );
-          return null;
-        }
-        conversationId = buildFeishuThreadConversationId({
-          chatId: parentConversationId,
-          rootMessageId: sourceMessageId,
-        });
       }
       if (!conversationId) {
         return null;

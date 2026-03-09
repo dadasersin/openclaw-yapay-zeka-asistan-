@@ -54,7 +54,6 @@ export function createAcpDispatchDeliveryCoordinator(params: {
   originatingTo?: string;
   onReplyStart?: () => Promise<void> | void;
 }): AcpDispatchDeliveryCoordinator {
-  const shouldPromoteBlockRepliesToFinal = params.ctx.AcpProjectionMode === "final_only";
   const state: AcpDispatchDeliveryState = {
     startedReplyLifecycle: false,
     accumulatedBlockText: "",
@@ -182,9 +181,6 @@ export function createAcpDispatchDeliveryCoordinator(params: {
       return params.dispatcher.sendToolResult(ttsPayload);
     }
     if (kind === "block") {
-      if (shouldPromoteBlockRepliesToFinal) {
-        return params.dispatcher.sendFinalReply(ttsPayload);
-      }
       return params.dispatcher.sendBlockReply(ttsPayload);
     }
     return params.dispatcher.sendFinalReply(ttsPayload);

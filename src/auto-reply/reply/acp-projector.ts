@@ -174,15 +174,13 @@ export function createAcpReplyProjector(params: {
   ) => Promise<boolean>;
   provider?: string;
   accountId?: string;
-  deliveryModeOverride?: "live" | "final_only";
 }): AcpReplyProjector {
   const settings = resolveAcpProjectionSettings(params.cfg);
-  const deliveryMode = params.deliveryModeOverride ?? settings.deliveryMode;
   const streaming = resolveAcpStreamingConfig({
     cfg: params.cfg,
     provider: params.provider,
     accountId: params.accountId,
-    deliveryMode,
+    deliveryMode: settings.deliveryMode,
   });
   const createTurnBlockReplyPipeline = () =>
     createBlockReplyPipeline({
@@ -190,7 +188,7 @@ export function createAcpReplyProjector(params: {
         await params.deliver("block", payload);
       },
       timeoutMs: ACP_BLOCK_REPLY_TIMEOUT_MS,
-      coalescing: deliveryMode === "live" ? undefined : streaming.coalescing,
+      coalescing: settings.deliveryMode === "live" ? undefined : streaming.coalescing,
     });
   let blockReplyPipeline = createTurnBlockReplyPipeline();
   const chunker = new EmbeddedBlockChunker(streaming.chunking);
@@ -217,7 +215,7 @@ export function createAcpReplyProjector(params: {
   };
 
   const drainChunker = (force: boolean) => {
-    if (deliveryMode === "final_only" && !force) {
+    if (settings.deliveryMode === "final_only" && !force) {
       return;
     }
     chunker.drain({
@@ -229,7 +227,7 @@ export function createAcpReplyProjector(params: {
   };
 
   const flushLiveBuffer = (opts?: { force?: boolean; idle?: boolean }) => {
-    if (deliveryMode !== "live") {
+    if (settings.deliveryMode !== "live") {
       return;
     }
     if (!liveBufferText) {
@@ -245,7 +243,7 @@ export function createAcpReplyProjector(params: {
   };
 
   const scheduleLiveIdleFlush = () => {
-    if (deliveryMode !== "live") {
+    if (settings.deliveryMode !== "live") {
       return;
     }
     if (liveIdleFlushMs <= 0 || !liveBufferText) {
@@ -277,7 +275,7 @@ export function createAcpReplyProjector(params: {
   };
 
   const flushBufferedToolDeliveries = async (force: boolean) => {
-    if (!(deliveryMode === "final_only" && force)) {
+    if (!(settings.deliveryMode === "final_only" && force)) {
       return;
     }
     for (const entry of pendingToolDeliveries.splice(0, pendingToolDeliveries.length)) {
@@ -286,7 +284,7 @@ export function createAcpReplyProjector(params: {
   };
 
   const flush = async (force = false): Promise<void> => {
-    if (deliveryMode === "live") {
+    if (settings.deliveryMode === "live") {
       clearLiveIdleTimer();
       flushLiveBuffer({ force: true });
     }
@@ -313,7 +311,7 @@ export function createAcpReplyProjector(params: {
     if (shouldDedupe && lastStatusHash === hash) {
       return;
     }
-    if (deliveryMode === "final_only") {
+    if (settings.deliveryMode === "final_only") {
       pendingToolDeliveries.push({
         payload: { text: formatted },
         meta,
@@ -375,7 +373,7 @@ export function createAcpReplyProjector(params: {
       ...(status ? { toolStatus: status } : {}),
       allowEdit: Boolean(toolCallId && event.tag === "tool_call_update"),
     };
-    if (deliveryMode === "final_only") {
+    if (settings.deliveryMode === "final_only") {
       pendingToolDeliveries.push({
         payload: { text: toolSummary },
         meta: deliveryMeta,
@@ -435,7 +433,7 @@ export function createAcpReplyProjector(params: {
       if (accepted.length > 0) {
         emittedOutputChars += accepted.length;
         lastVisibleOutputTail = accepted.slice(-1);
-        if (deliveryMode === "live") {
+        if (settings.deliveryMode === "live") {
           liveBufferText += accepted;
           if (shouldFlushLiveBufferOnBoundary(liveBufferText)) {
             clearLiveIdleTimer();

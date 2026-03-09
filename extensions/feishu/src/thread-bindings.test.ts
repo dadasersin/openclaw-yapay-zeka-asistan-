@@ -51,30 +51,6 @@ describe("feishu thread bindings", () => {
     ).toBe("agent:codex:acp:s1");
   });
 
-  it("binds child Feishu conversations by using the triggering message as the topic root", async () => {
-    createFeishuThreadBindingManager({
-      accountId: "default",
-      persist: false,
-      enableSweeper: false,
-    });
-
-    const bound = await getSessionBindingService().bind({
-      targetSessionKey: "agent:codex:acp:s1",
-      targetKind: "session",
-      conversation: {
-        channel: "feishu",
-        accountId: "default",
-        conversationId: "oc_chat_parent",
-      },
-      placement: "child",
-      metadata: {
-        sourceMessageId: "om_seed_1",
-      },
-    });
-
-    expect(bound.conversation.conversationId).toBe("oc_chat_parent:thread:om_seed_1");
-  });
-
   it("resolves native thread id aliases back to the canonical root-message binding", async () => {
     createFeishuThreadBindingManager({
       accountId: "default",
@@ -177,38 +153,6 @@ describe("feishu thread bindings", () => {
         nativeThreadId: "omt_thread_4",
       }),
     ).toBeNull();
-  });
-
-  it("logs a diagnostic when child placement is missing the trigger message id", async () => {
-    createFeishuThreadBindingManager({
-      accountId: "default",
-      persist: false,
-      enableSweeper: false,
-    });
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      await expect(
-        getSessionBindingService().bind({
-          targetSessionKey: "agent:codex:acp:s5",
-          targetKind: "session",
-          conversation: {
-            channel: "feishu",
-            accountId: "default",
-            conversationId: "oc_chat_parent_5",
-          },
-          placement: "child",
-          metadata: {},
-        }),
-      ).rejects.toThrow("Session binding adapter failed to bind target conversation");
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "child placement requires parent conversation and source message id",
-        ),
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
   });
 
   it("loads persisted bindings from the Feishu state directory", async () => {
@@ -447,7 +391,7 @@ describe("feishu thread bindings", () => {
     ).toMatchObject({
       adapterAvailable: true,
       bindSupported: true,
-      placements: ["current", "child"],
+      placements: ["current"],
     });
   });
 });

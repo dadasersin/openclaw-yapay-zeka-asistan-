@@ -34,8 +34,6 @@ export function createOpenClawTools(
     agentAccountId?: string;
     /** Delivery target (e.g. telegram:group:123:topic:456) for topic/thread routing. */
     agentTo?: string;
-    /** Canonical current conversation id when the channel plugin can provide one. */
-    agentConversationId?: string;
     /** Thread/topic identifier for routing replies to the originating thread. */
     agentThreadId?: string | number;
     agentDir?: string;
@@ -174,9 +172,7 @@ export function createOpenClawTools(
       agentChannel: options?.agentChannel,
       agentAccountId: options?.agentAccountId,
       agentTo: options?.agentTo,
-      agentConversationId: options?.agentConversationId,
       agentThreadId: options?.agentThreadId,
-      agentCurrentMessageId: options?.currentMessageId,
       agentGroupId: options?.agentGroupId,
       agentGroupChannel: options?.agentGroupChannel,
       agentGroupSpace: options?.agentGroupSpace,

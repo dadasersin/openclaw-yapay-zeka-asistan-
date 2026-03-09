@@ -86,7 +86,7 @@ describe("Feishu monitor startup preflight", () => {
       ).toMatchObject({
         adapterAvailable: true,
         bindSupported: true,
-        placements: ["current", "child"],
+        placements: ["current"],
       });
     } finally {
       abortController.abort();

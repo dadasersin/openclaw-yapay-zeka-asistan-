@@ -86,7 +86,6 @@ function resolveFeishuNativeConversationId(params: {
   chatId: string;
   threadRootMessageId?: string;
   threadBindingConversationId?: string;
-  fallbackThreadMessageId?: string;
 }): string {
   const boundConversationId = params.threadBindingConversationId?.trim();
   if (boundConversationId) {
@@ -95,7 +94,7 @@ function resolveFeishuNativeConversationId(params: {
   return (
     buildFeishuThreadConversationId({
       chatId: params.chatId,
-      rootMessageId: params.threadRootMessageId ?? params.fallbackThreadMessageId,
+      rootMessageId: params.threadRootMessageId,
     }) ?? params.chatId
   );
 }
@@ -1237,7 +1236,7 @@ export async function handleFeishuMessage(params: {
     let threadBinding = null as ReturnType<
       ReturnType<typeof getSessionBindingService>["resolveByConversation"]
     >;
-    if (threadConversationId || ctx.threadId?.trim()) {
+    if (isGroup && (threadConversationId || ctx.threadId?.trim())) {
       const resolveThreadBinding = () =>
         (threadConversationId
           ? getSessionBindingService().resolveByConversation({
@@ -1426,26 +1425,23 @@ export async function handleFeishuMessage(params: {
       agentAccountId: string,
       wasMentioned: boolean,
     ) => {
-      const nativeConversationId = resolveFeishuNativeConversationId({
-        chatId: ctx.chatId,
-        threadRootMessageId,
-        threadBindingConversationId: threadBinding?.conversation.conversationId,
-        // Feishu follow-up events can omit root_id while still remaining inside
-        // the current topic. Expose a temporary thread-scoped conversation id
-        // so core ACP binding logic can stay channel-agnostic until the plugin
-        // records the native thread alias.
-        fallbackThreadMessageId:
-          !threadRootMessageId && (ctx.rootId || ctx.threadId) ? ctx.messageId : undefined,
-      });
+      const nativeConversationId =
+        isGroup && (threadRootMessageId || threadBinding?.conversation.conversationId)
+          ? resolveFeishuNativeConversationId({
+              chatId: ctx.chatId,
+              threadRootMessageId,
+              threadBindingConversationId: threadBinding?.conversation.conversationId,
+            })
+          : undefined;
       return core.channel.reply.finalizeInboundContext({
         Body: combinedBody,
         BodyForAgent: messageBody,
         InboundHistory: inboundHistory,
         ReplyToId: ctx.parentId,
-        MessageThreadId: threadRootMessageId,
-        RootMessageId: threadRootMessageId,
-        NativeChannelId: nativeConversationId,
-        ThreadParentId: ctx.rootId || ctx.threadId ? ctx.chatId : undefined,
+        ...(threadRootMessageId ? { MessageThreadId: threadRootMessageId } : {}),
+        ...(threadRootMessageId ? { RootMessageId: threadRootMessageId } : {}),
+        ...(nativeConversationId ? { NativeChannelId: nativeConversationId } : {}),
+        ...(nativeConversationId ? { ThreadParentId: ctx.chatId } : {}),
         RawBody: ctx.content,
         CommandBody: ctx.content,
         From: feishuFrom,
@@ -1489,11 +1485,10 @@ export async function handleFeishuMessage(params: {
     const configReplyInThread =
       isGroup &&
       (groupConfig?.replyInThread ?? feishuCfg?.replyInThread ?? "disabled") === "enabled";
-    const inThreadConversation = Boolean(ctx.rootId ?? ctx.threadId);
     const replyTargetMessageId =
       isTopicSession || configReplyInThread ? (ctx.rootId ?? ctx.messageId) : ctx.messageId;
-    const threadReply = isGroup ? (groupSession?.threadReply ?? false) : inThreadConversation;
-    const skipReplyToInMessages = !isGroup && !inThreadConversation;
+    const threadReply = isGroup ? (groupSession?.threadReply ?? false) : false;
+    const skipReplyToInMessages = !isGroup;
 
     if (broadcastAgents) {
       // Cross-account dedup: in multi-account setups, Feishu delivers the same
