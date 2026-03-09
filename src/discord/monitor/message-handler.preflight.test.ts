@@ -383,6 +383,30 @@ describe("preflightDiscordMessage", () => {
     expect(result?.shouldRequireMention).toBe(false);
   });
 
+  it("drops bot messages when allowBots is not set (defaults to off)", async () => {
+    const channelId = "channel-bot-off";
+    const guildId = "guild-bot-off";
+    const message = createMessage({
+      id: "m-bot-off",
+      channelId,
+      content: "relay chatter",
+      author: {
+        id: "relay-bot-default",
+        bot: true,
+        username: "RelayDefault",
+      },
+    });
+
+    const result = await runGuildPreflight({
+      channelId,
+      guildId,
+      message,
+      discordConfig: {} as DiscordConfig,
+    });
+
+    expect(result).toBeNull();
+  });
+
   it("drops bot messages without mention when allowBots=mentions", async () => {
     const channelId = "channel-bot-mentions-off";
     const guildId = "guild-bot-mentions-off";
