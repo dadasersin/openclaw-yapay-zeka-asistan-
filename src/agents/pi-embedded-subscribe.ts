@@ -286,7 +286,9 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     // This must fire before agent_end / lifecycle "end" so the TUI receives it
     // while the run is still active.
     const derivedPrompt = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-    const promptTokens = derivedPrompt || (usage.total ?? 0);
+    // Only use prompt-derived tokens for totalTokens (context window size).
+    // usage.total includes output tokens, which would inflate the display.
+    const promptTokens = derivedPrompt > 0 ? derivedPrompt : undefined;
     emitAgentEvent({
       runId: params.runId,
       stream: "usage",

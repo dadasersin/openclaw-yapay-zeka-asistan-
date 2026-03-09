@@ -116,8 +116,13 @@ export function createEventHandlers(context: EventHandlerContext) {
     void refreshSessionInfo?.();
     // Schedule a follow-up refresh after the live-usage freshness guard
     // expires so authoritative persisted data replaces live values.
-    if (params.wasActiveRun && state.liveUsageUpdatedAt > 0) {
-      setTimeout(() => void refreshSessionInfo?.(), 6_000);
+    if (params.wasActiveRun && Date.now() - state.liveUsageUpdatedAt < 5_000) {
+      const sessionKey = state.currentSessionKey;
+      setTimeout(() => {
+        if (state.currentSessionKey === sessionKey) {
+          void refreshSessionInfo?.();
+        }
+      }, 6_000);
     }
   };
 
@@ -135,8 +140,13 @@ export function createEventHandlers(context: EventHandlerContext) {
     void refreshSessionInfo?.();
     // Schedule a follow-up refresh after the live-usage freshness guard
     // expires so authoritative persisted data replaces live values.
-    if (params.wasActiveRun && state.liveUsageUpdatedAt > 0) {
-      setTimeout(() => void refreshSessionInfo?.(), 6_000);
+    if (params.wasActiveRun && Date.now() - state.liveUsageUpdatedAt < 5_000) {
+      const sessionKey = state.currentSessionKey;
+      setTimeout(() => {
+        if (state.currentSessionKey === sessionKey) {
+          void refreshSessionInfo?.();
+        }
+      }, 6_000);
     }
   };
 
