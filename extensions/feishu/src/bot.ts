@@ -1312,6 +1312,7 @@ export async function handleFeishuMessage(params: {
         InboundHistory: inboundHistory,
         ReplyToId: ctx.parentId,
         RootMessageId: ctx.rootId,
+        MessageThreadId: isGroup ? ctx.threadId || ctx.rootId : undefined,
         RawBody: ctx.content,
         CommandBody: ctx.content,
         From: feishuFrom,

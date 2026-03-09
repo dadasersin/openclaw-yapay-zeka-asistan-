@@ -473,6 +473,12 @@ export function createFeishuThreadBindingManager(
         clearInterval(sweepTimer);
         sweepTimer = null;
       }
+      // Clean up all bindings owned by this account to avoid stale entries on reconnect.
+      for (const [key, entry] of BINDINGS_BY_ACCOUNT_CONVERSATION) {
+        if (entry.accountId === accountId) {
+          BINDINGS_BY_ACCOUNT_CONVERSATION.delete(key);
+        }
+      }
       unregisterSessionBindingAdapter({ channel: "feishu", accountId });
       const existingManager = MANAGERS_BY_ACCOUNT_ID.get(accountId);
       if (existingManager === manager) {

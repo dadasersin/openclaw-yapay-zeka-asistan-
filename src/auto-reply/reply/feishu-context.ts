@@ -1,6 +1,7 @@
 type FeishuConversationParams = {
   ctx: {
     MessageThreadId?: string | number | null;
+    ChatType?: string;
     OriginatingTo?: string;
     To?: string;
   };
@@ -45,8 +46,15 @@ export function resolveFeishuConversationId(params: FeishuConversationParams): s
   if (threadId) {
     return `${chatId}:topic:${threadId}`;
   }
+  // Direct messages are always focusable. Use ChatType when available, otherwise
+  // infer from the target prefix: user:ou_* targets are DMs, chat:oc_* are groups.
+  const chatType =
+    typeof params.ctx.ChatType === "string" ? params.ctx.ChatType.trim().toLowerCase() : "";
+  if (chatType === "direct" || chatType === "p2p" || chatType === "private") {
+    return chatId;
+  }
   // Group chats (oc_ prefix) without a topic should not become globally focused.
-  if (chatId.startsWith("oc_")) {
+  if (chatType === "group" || chatId.toLowerCase().startsWith("oc_")) {
     return undefined;
   }
   // DM conversations (ou_ prefix or other IDs) are allowed.
