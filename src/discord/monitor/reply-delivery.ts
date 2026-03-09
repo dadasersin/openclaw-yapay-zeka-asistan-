@@ -7,8 +7,9 @@ import type { MarkdownTableMode, ReplyToMode } from "../../config/types.base.js"
 import { createDiscordRetryRunner, type RetryRunner } from "../../infra/retry-policy.js";
 import { resolveRetryConfig, retryAsync, type RetryConfig } from "../../infra/retry.js";
 import { convertMarkdownTables } from "../../markdown/tables.js";
+import { normalizeAccountId } from "../../routing/session-key.js";
 import type { RuntimeEnv } from "../../runtime.js";
-import { resolveDiscordAccount } from "../accounts.js";
+import { mergeDiscordAccountConfig } from "../accounts.js";
 import { chunkDiscordTextWithMode } from "../chunk.js";
 import { sendMessageDiscord, sendVoiceMessageDiscord, sendWebhookMessageDiscord } from "../send.js";
 import { sendDiscordText } from "../send.shared.js";
@@ -259,10 +260,13 @@ export async function deliverDiscordReply(params: {
   // This eliminates redundant channel-type GET requests and client creation that
   // can cause ordering issues when multiple chunks share the RequestClient queue.
   const channelId = resolveTargetChannelId(params.target);
-  const account = resolveDiscordAccount({ cfg: loadConfig(), accountId: params.accountId });
-  const retryConfig = resolveDeliveryRetryConfig(account.config.retry);
+  const accountConfig = mergeDiscordAccountConfig(
+    loadConfig(),
+    normalizeAccountId(params.accountId),
+  );
+  const retryConfig = resolveDeliveryRetryConfig(accountConfig.retry);
   const request: RetryRunner | undefined = channelId
-    ? createDiscordRetryRunner({ configRetry: account.config.retry })
+    ? createDiscordRetryRunner({ configRetry: accountConfig.retry })
     : undefined;
   let deliveredAny = false;
   for (const payload of params.replies) {

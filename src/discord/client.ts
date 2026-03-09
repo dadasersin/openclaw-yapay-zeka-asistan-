@@ -2,8 +2,9 @@ import { RequestClient } from "@buape/carbon";
 import { loadConfig } from "../config/config.js";
 import { createDiscordRetryRunner, type RetryRunner } from "../infra/retry-policy.js";
 import type { RetryConfig } from "../infra/retry.js";
-import { resolveDiscordAccount } from "./accounts.js";
-import { normalizeDiscordToken } from "./token.js";
+import { normalizeAccountId } from "../routing/session-key.js";
+import { mergeDiscordAccountConfig, type ResolvedDiscordAccount } from "./accounts.js";
+import { normalizeDiscordToken, resolveDiscordToken } from "./token.js";
 
 export type DiscordClientOpts = {
   token?: string;
@@ -31,12 +32,31 @@ function resolveRest(token: string, rest?: RequestClient) {
   return rest ?? new RequestClient(token);
 }
 
+function resolveDiscordClientAccountContext(
+  cfg: ReturnType<typeof loadConfig>,
+  accountIdInput?: string,
+): Omit<ResolvedDiscordAccount, "token" | "tokenSource"> {
+  const accountId = normalizeAccountId(accountIdInput);
+  const config = mergeDiscordAccountConfig(cfg, accountId);
+  const enabled = cfg.channels?.discord?.enabled !== false && config.enabled !== false;
+  return {
+    accountId,
+    enabled,
+    name: config.name?.trim() || undefined,
+    config,
+  };
+}
+
 export function createDiscordRestClient(opts: DiscordClientOpts, cfg = loadConfig()) {
-  const account = resolveDiscordAccount({ cfg, accountId: opts.accountId });
+  const account = resolveDiscordClientAccountContext(cfg, opts.accountId);
+  const explicit = normalizeDiscordToken(opts.token, "channels.discord.token");
+  const fallbackToken = explicit
+    ? undefined
+    : resolveDiscordToken(cfg, { accountId: account.accountId }).token;
   const token = resolveToken({
-    explicit: opts.token,
+    explicit,
     accountId: account.accountId,
-    fallbackToken: account.token,
+    fallbackToken,
   });
   const rest = resolveRest(token, opts.rest);
   return { token, rest, account };
