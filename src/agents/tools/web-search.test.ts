@@ -23,6 +23,7 @@ const {
   resolveKimiBaseUrl,
   extractKimiCitations,
   resolveBraveMode,
+  createWebSearchSchema,
 } = __testing;
 
 const kimiApiKeyEnv = ["KIMI_API", "KEY"].join("_");
@@ -391,5 +392,31 @@ describe("resolveBraveMode", () => {
 
   it("falls back to 'web' for unrecognized mode values", () => {
     expect(resolveBraveMode({ mode: "invalid" })).toBe("web");
+  });
+});
+
+describe("web_search goggles schema", () => {
+  it("includes goggles as optional string for Brave provider", () => {
+    const schema = createWebSearchSchema({ provider: "brave" });
+    const props = schema.properties as Record<string, { type?: string }>;
+    expect(props.goggles).toBeDefined();
+    expect(props.goggles.type).toBe("string");
+  });
+
+  it("does not include goggles for Perplexity provider", () => {
+    const schema = createWebSearchSchema({
+      provider: "perplexity",
+      perplexityTransport: "search_api",
+    });
+    const props = schema.properties as Record<string, unknown>;
+    expect(props.goggles).toBeUndefined();
+  });
+
+  it("does not include goggles for non-Brave provider", () => {
+    const schema = createWebSearchSchema({
+      provider: "gemini",
+    });
+    const props = schema.properties as Record<string, unknown>;
+    expect(props.goggles).toBeUndefined();
   });
 });

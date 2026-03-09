@@ -7,6 +7,7 @@ Docs: https://docs.openclaw.ai
 ### Changes
 
 - Gateway/node pending work: add narrow in-memory pending-work queue primitives (`node.pending.enqueue` / `node.pending.drain`) and wake-helper reuse as a foundation for dormant-node work delivery. (#41409) Thanks @mbelinky.
+- Tools/Brave web search: add `goggles` parameter so `web_search` can apply [Brave Goggles](https://search.brave.com/help/goggles) custom filtering and ranking rules (inline or hosted URL) in both web and llm-context modes.
 
 ### Breaking
 
