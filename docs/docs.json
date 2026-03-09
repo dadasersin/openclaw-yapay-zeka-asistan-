@@ -1102,6 +1102,7 @@
                   "providers/claude-max-api-proxy",
                   "providers/deepgram",
                   "providers/github-copilot",
+                  "providers/google",
                   "providers/huggingface",
                   "providers/kilocode",
                   "providers/litellm",
