@@ -136,11 +136,14 @@ async function deliverTextReply(params: {
         replyMarkup: shouldAttachButtons ? params.replyMarkup : undefined,
       },
     );
-    if (firstDeliveredMessageId == null) {
-      firstDeliveredMessageId = messageId;
+    // Skip delivery tracking for skipped messages (messageId === 0 means empty content was skipped)
+    if (messageId !== 0) {
+      if (firstDeliveredMessageId == null) {
+        firstDeliveredMessageId = messageId;
+      }
+      markReplyApplied(params.progress, replyToForChunk);
+      markDelivered(params.progress);
     }
-    markReplyApplied(params.progress, replyToForChunk);
-    markDelivered(params.progress);
   }
   return firstDeliveredMessageId;
 }
@@ -166,7 +169,7 @@ async function sendPendingFollowUpText(params: {
       replyToMode: params.replyToMode,
       progress: params.progress,
     });
-    await sendTelegramText(params.bot, params.chatId, chunk.html, params.runtime, {
+    const messageId = await sendTelegramText(params.bot, params.chatId, chunk.html, params.runtime, {
       replyToMessageId: replyToForFollowUp,
       thread: params.thread,
       textMode: "html",
@@ -174,8 +177,11 @@ async function sendPendingFollowUpText(params: {
       linkPreview: params.linkPreview,
       replyMarkup: i === 0 ? params.replyMarkup : undefined,
     });
-    markReplyApplied(params.progress, replyToForFollowUp);
-    markDelivered(params.progress);
+    // Skip delivery tracking for skipped messages (messageId === 0 means empty content was skipped)
+    if (messageId !== 0) {
+      markReplyApplied(params.progress, replyToForFollowUp);
+      markDelivered(params.progress);
+    }
   }
 }
 
