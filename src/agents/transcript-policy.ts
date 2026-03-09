@@ -38,6 +38,10 @@ const OPENAI_MODEL_APIS = new Set([
   "openai-codex-responses",
 ]);
 
+// kimi-coding (Moonshot) cannot handle re-sent thinking signatures and crashes.
+// Exclude it from Anthropic signature preservation even though it uses anthropic-messages API.
+const ANTHROPIC_API_SIGNATURE_EXCLUDED_PROVIDERS = new Set(["kimi-coding"]);
+
 function isOpenAiApi(modelApi?: string | null): boolean {
   if (!modelApi) {
     return false;
@@ -83,7 +87,9 @@ export function resolveTranscriptPolicy(params: {
   // GitHub Copilot's Claude endpoints can reject persisted `thinking` blocks with
   // non-binary/non-base64 signatures (e.g. thinkingSignature: "reasoning_text").
   // Drop these blocks at send-time to keep sessions usable.
-  const dropThinkingBlocks = shouldDropThinkingBlocksForModel({ provider, modelId });
+  const dropThinkingBlocks =
+    shouldDropThinkingBlocksForModel({ provider, modelId }) ||
+    ANTHROPIC_API_SIGNATURE_EXCLUDED_PROVIDERS.has(provider);
 
   const needsNonImageSanitize =
     isGoogle || isAnthropic || isMistral || shouldSanitizeGeminiThoughtSignaturesForProvider;
@@ -112,7 +118,10 @@ export function resolveTranscriptPolicy(params: {
       (!isOpenAi && sanitizeToolCallIds) || requiresOpenAiCompatibleToolIdSanitization,
     toolCallIdMode,
     repairToolUseResultPairing,
-    preserveSignatures: isAnthropic && preservesAnthropicThinkingSignatures(provider),
+    preserveSignatures:
+      isAnthropic &&
+      preservesAnthropicThinkingSignatures(provider) &&
+      !ANTHROPIC_API_SIGNATURE_EXCLUDED_PROVIDERS.has(provider),
     sanitizeThoughtSignatures: isOpenAi ? undefined : sanitizeThoughtSignatures,
     sanitizeThinkingSignatures: false,
     dropThinkingBlocks,
