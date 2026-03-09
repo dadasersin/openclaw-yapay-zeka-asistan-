@@ -86,14 +86,44 @@ export function registerFeishuSubagentHooks(api: OpenClawPluginApi) {
       return;
     }
 
+    // Match by requester conversation to avoid routing to the wrong chat
+    // when the same subagent is focused in multiple conversations.
+    const requesterTo = event.requesterOrigin?.to?.trim() || "";
+    const requesterThreadId =
+      event.requesterOrigin?.threadId != null && event.requesterOrigin.threadId !== ""
+        ? String(event.requesterOrigin.threadId).trim()
+        : "";
     let binding: (typeof bindings)[number] | undefined;
-    if (bindings.length === 1) {
+    if (requesterTo || requesterThreadId) {
+      binding = bindings.find((entry) => {
+        if (requesterThreadId && entry.conversationId.includes(`:topic:${requesterThreadId}`)) {
+          return true;
+        }
+        if (requesterTo && entry.conversationId === requesterTo) {
+          return true;
+        }
+        return false;
+      });
+    }
+    if (!binding && bindings.length === 1) {
       binding = bindings[0];
-    } else if (requesterAccountId) {
-      binding = bindings.find((entry) => entry.accountId === requesterAccountId);
     }
     if (!binding) {
       return;
+    }
+
+    // Split topic-style conversation IDs (chatId:topic:threadId) into
+    // separate to/threadId fields for outbound Feishu delivery.
+    const topicMatch = binding.conversationId.match(/^(.+):topic:(.+)$/);
+    if (topicMatch) {
+      return {
+        origin: {
+          channel: "feishu",
+          accountId: binding.accountId,
+          to: topicMatch[1],
+          threadId: topicMatch[2],
+        },
+      };
     }
     return {
       origin: {
