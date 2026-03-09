@@ -1086,6 +1086,8 @@ export const chatHandlers: GatewayRequestHandlers = {
         channel: INTERNAL_MESSAGE_CHANNEL,
       });
       const finalReplyParts: string[] = [];
+      const errorReplyParts: string[] = [];
+      let hasErrorPayload = false;
       const dispatcher = createReplyDispatcher({
         ...prefixOptions,
         onError: (err) => {
@@ -1095,11 +1097,18 @@ export const chatHandlers: GatewayRequestHandlers = {
           if (info.kind !== "final") {
             return;
           }
+          if (payload.isError) {
+            hasErrorPayload = true;
+          }
           const text = payload.text?.trim() ?? "";
           if (!text) {
             return;
           }
-          finalReplyParts.push(text);
+          if (payload.isError) {
+            errorReplyParts.push(text);
+          } else {
+            finalReplyParts.push(text);
+          }
         },
       });
 
@@ -1178,6 +1187,27 @@ export const chatHandlers: GatewayRequestHandlers = {
               sessionKey: rawSessionKey,
               message,
             });
+          } else if (
+            hasErrorPayload &&
+            finalReplyParts.length === 0 &&
+            errorReplyParts.length > 0
+          ) {
+            // When the agent run started but produced only error payloads
+            // (e.g. auth failure, CLI crash), the lifecycle events carry no
+            // assistant text.  Surface the error to the UI/TUI explicitly.
+            const combinedError = errorReplyParts
+              .map((part) => part.trim())
+              .filter(Boolean)
+              .join("\n\n")
+              .trim();
+            if (combinedError) {
+              broadcastChatError({
+                context,
+                runId: clientRunId,
+                sessionKey: rawSessionKey,
+                errorMessage: combinedError,
+              });
+            }
           }
           setGatewayDedupeEntry({
             dedupe: context.dedupe,
