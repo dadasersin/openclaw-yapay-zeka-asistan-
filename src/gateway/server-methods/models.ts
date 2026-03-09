@@ -25,11 +25,19 @@ export const modelsHandlers: GatewayRequestHandlers = {
     try {
       const catalog = await context.loadGatewayModelCatalog();
       const cfg = loadConfig();
-      const configuredProviders = new Set(
-        Object.keys(cfg.models?.providers ?? {})
-          .map((provider) => normalizeProviderId(provider.trim()))
-          .filter(Boolean),
-      );
+      // Include providers from config AND providers with env-var API keys set
+      // so implicitly authenticated providers also appear in the picker.
+      const explicitProviders = Object.keys(cfg.models?.providers ?? {})
+        .map((provider) => normalizeProviderId(provider.trim()))
+        .filter(Boolean);
+
+      const { PROVIDER_ENV_API_KEY_CANDIDATES } =
+        await import("../../agents/model-auth-env-vars.js");
+      const envProviders = Object.entries(PROVIDER_ENV_API_KEY_CANDIDATES)
+        .filter(([, envVars]) => envVars.some((envVar) => process.env[envVar]))
+        .map(([provider]) => normalizeProviderId(provider));
+
+      const configuredProviders = new Set([...explicitProviders, ...envProviders]);
       const { allowAny, allowedCatalog } = buildAllowedModelSet({
         cfg,
         catalog,
