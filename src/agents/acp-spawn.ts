@@ -550,6 +550,12 @@ export async function spawnAcpDirect(
     });
   }
   try {
+    // Apply default run timeout from ACP config if not explicitly provided
+    const acpDefaultTimeout = cfg.acp?.defaultRunTimeoutSeconds;
+    const timeoutSeconds =
+      typeof acpDefaultTimeout === "number" && Number.isFinite(acpDefaultTimeout)
+        ? Math.max(0, Math.floor(acpDefaultTimeout))
+        : undefined;
     const response = await callGateway<{ runId?: string }>({
       method: "agent",
       params: {
@@ -562,6 +568,7 @@ export async function spawnAcpDirect(
         idempotencyKey: childIdem,
         deliver: useInlineDelivery,
         label: params.label || undefined,
+        ...(timeoutSeconds ? { timeout: timeoutSeconds } : {}),
       },
       timeoutMs: 10_000,
     });
