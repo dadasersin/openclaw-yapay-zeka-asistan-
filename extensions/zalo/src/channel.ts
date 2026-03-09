@@ -27,7 +27,7 @@ import {
   normalizeAccountId,
   isNumericTargetId,
   PAIRING_APPROVED_MESSAGE,
-  resolveOutboundMediaUrls,
+  resolveChannelAccountConfigBasePath,
   sendPayloadWithChunkedTextAndMedia,
   setAccountEnabledInConfigSection,
 } from "openclaw/plugin-sdk/zalo";
@@ -52,7 +52,7 @@ const meta = {
   selectionLabel: "Zalo (Bot API)",
   docsPath: "/channels/zalo",
   docsLabel: "zalo",
-  blurb: "Vietnam-focused messaging platform with Bot API.",
+  blurb: "Vietnam-focused messaging platform with Bot API (direct messages only).",
   aliases: ["zl"],
   order: 80,
   quickstartAllowFrom: true,
@@ -69,7 +69,7 @@ function normalizeZaloMessagingTarget(raw: string): string | undefined {
 export const zaloDock: ChannelDock = {
   id: "zalo",
   capabilities: {
-    chatTypes: ["direct", "group"],
+    chatTypes: ["direct"],
     media: true,
     blockStreaming: true,
   },
@@ -79,9 +79,6 @@ export const zaloDock: ChannelDock = {
       mapAllowFromEntries(resolveZaloAccount({ cfg: cfg, accountId }).config.allowFrom),
     formatAllowFrom: ({ allowFrom }) =>
       formatAllowFromLowercase({ allowFrom, stripPrefixRe: /^(zalo|zl):/i }),
-  },
-  groups: {
-    resolveRequireMention: () => true,
   },
   threading: {
     resolveReplyToMode: () => "off",
@@ -93,7 +90,7 @@ export const zaloPlugin: ChannelPlugin<ResolvedZaloAccount> = {
   meta,
   onboarding: zaloOnboardingAdapter,
   capabilities: {
-    chatTypes: ["direct", "group"],
+    chatTypes: ["direct"],
     media: true,
     reactions: false,
     threads: false,
@@ -148,44 +145,7 @@ export const zaloPlugin: ChannelPlugin<ResolvedZaloAccount> = {
         normalizeEntry: (raw) => raw.replace(/^(zalo|zl):/i, ""),
       });
     },
-    collectWarnings: ({ account, cfg }) => {
-      return collectOpenProviderGroupPolicyWarnings({
-        cfg,
-        providerConfigPresent: cfg.channels?.zalo !== undefined,
-        configuredGroupPolicy: account.config.groupPolicy,
-        collect: (groupPolicy) => {
-          if (groupPolicy !== "open") {
-            return [];
-          }
-          const explicitGroupAllowFrom = mapAllowFromEntries(account.config.groupAllowFrom);
-          const dmAllowFrom = mapAllowFromEntries(account.config.allowFrom);
-          const effectiveAllowFrom =
-            explicitGroupAllowFrom.length > 0 ? explicitGroupAllowFrom : dmAllowFrom;
-          if (effectiveAllowFrom.length > 0) {
-            return [
-              buildOpenGroupPolicyRestrictSendersWarning({
-                surface: "Zalo groups",
-                openScope: "any member",
-                groupPolicyPath: "channels.zalo.groupPolicy",
-                groupAllowFromPath: "channels.zalo.groupAllowFrom",
-              }),
-            ];
-          }
-          return [
-            buildOpenGroupPolicyWarning({
-              surface: "Zalo groups",
-              openBehavior:
-                "with no groupAllowFrom/allowFrom allowlist; any member can trigger (mention-gated)",
-              remediation:
-                'Set channels.zalo.groupPolicy="allowlist" + channels.zalo.groupAllowFrom',
-            }),
-          ];
-        },
-      });
-    },
-  },
-  groups: {
-    resolveRequireMention: () => true,
+    collectWarnings: () => [],
   },
   threading: {
     resolveReplyToMode: () => "off",

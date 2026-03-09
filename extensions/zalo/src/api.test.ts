@@ -1,63 +1,113 @@
-import { describe, expect, it, vi } from "vitest";
-import { deleteWebhook, getWebhookInfo, sendChatAction, type ZaloFetch } from "./api.js";
+import { describe, expect, it } from "vitest";
+import { callZaloApi, getUpdates, ZaloApiAbortError, ZaloApiError, type ZaloFetch } from "./api.js";
 
-describe("Zalo API request methods", () => {
-  it("uses POST for getWebhookInfo", async () => {
-    const fetcher = vi.fn<ZaloFetch>(
-      async () => new Response(JSON.stringify({ ok: true, result: {} })),
-    );
-
-    await getWebhookInfo("test-token", fetcher);
-
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    const [, init] = fetcher.mock.calls[0] ?? [];
-    expect(init?.method).toBe("POST");
-    expect(init?.headers).toEqual({ "Content-Type": "application/json" });
-  });
-
-  it("keeps POST for deleteWebhook", async () => {
-    const fetcher = vi.fn<ZaloFetch>(
-      async () => new Response(JSON.stringify({ ok: true, result: {} })),
-    );
-
-    await deleteWebhook("test-token", fetcher);
-
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    const [, init] = fetcher.mock.calls[0] ?? [];
-    expect(init?.method).toBe("POST");
-    expect(init?.headers).toEqual({ "Content-Type": "application/json" });
-  });
-
-  it("aborts sendChatAction when the typing timeout elapses", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetcher = vi.fn<ZaloFetch>(
-        (_, init) =>
-          new Promise<Response>((_, reject) => {
-            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
-              once: true,
-            });
-          }),
-      );
-
-      const promise = sendChatAction(
-        "test-token",
-        {
-          chat_id: "chat-123",
-          action: "typing",
+function createAbortableNeverFetch(): ZaloFetch {
+  return async (_input, init) =>
+    await new Promise<Response>((_resolve, reject) => {
+      const abortError = Object.assign(new Error("aborted"), { name: "AbortError" });
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          reject(abortError);
         },
-        fetcher,
-        25,
+        { once: true },
       );
-      const rejected = expect(promise).rejects.toThrow("aborted");
+    });
+}
 
-      await vi.advanceTimersByTimeAsync(25);
+describe("zalo api abort handling", () => {
+  it("maps local request timeout to ZaloApiAbortError(timeout)", async () => {
+    await expect(
+      callZaloApi("getMe", "token", undefined, {
+        timeoutMs: 5,
+        fetch: createAbortableNeverFetch(),
+      }),
+    ).rejects.toMatchObject({
+      name: "ZaloApiAbortError",
+      reason: "timeout",
+    } satisfies Partial<ZaloApiAbortError>);
+  });
 
-      await rejected;
-      const [, init] = fetcher.mock.calls[0] ?? [];
-      expect(init?.signal?.aborted).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
+  it("maps external abortSignal cancellation to ZaloApiAbortError(aborted)", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 5);
+    await expect(
+      callZaloApi(
+        "getUpdates",
+        "token",
+        { timeout: "30" },
+        {
+          timeoutMs: 1000,
+          abortSignal: controller.signal,
+          fetch: createAbortableNeverFetch(),
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "ZaloApiAbortError",
+      reason: "aborted",
+    } satisfies Partial<ZaloApiAbortError>);
+  });
+
+  it("getUpdates accepts extended polling params and returns parsed response", async () => {
+    const fetcher: ZaloFetch = async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          result: {
+            event_name: "message.link.received",
+          },
+        }),
+      );
+    const response = await getUpdates("token", { timeout: 1, timeoutBufferMs: 50 }, fetcher);
+    expect(response.ok).toBe(true);
+    expect(response.result?.event_name).toBe("message.link.received");
+  });
+
+  it("maps HTML/non-JSON API responses to ZaloApiError with context", async () => {
+    const fetcher: ZaloFetch = async () =>
+      new Response("<html><h1>Bad gateway</h1></html>", {
+        status: 502,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+        },
+      });
+
+    await expect(
+      callZaloApi("getUpdates", "token", undefined, { fetch: fetcher }),
+    ).rejects.toMatchObject({
+      name: "ZaloApiError",
+      errorCode: 502,
+    } satisfies Partial<ZaloApiError>);
+
+    await expect(callZaloApi("getUpdates", "token", undefined, { fetch: fetcher })).rejects.toThrow(
+      /non-JSON response/i,
+    );
+  });
+
+  it("does not treat non-JSON HTTP 408 as polling timeout", async () => {
+    const fetcher: ZaloFetch = async () =>
+      new Response("Request timeout from proxy", {
+        status: 408,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+        },
+      });
+
+    await expect(
+      callZaloApi("getUpdates", "token", undefined, { fetch: fetcher }),
+    ).rejects.toMatchObject({
+      name: "ZaloApiError",
+    } satisfies Partial<ZaloApiError>);
+
+    await expect(
+      callZaloApi("getUpdates", "token", undefined, { fetch: fetcher }).catch((err: unknown) => {
+        expect(err).toBeInstanceOf(ZaloApiError);
+        if (!(err instanceof ZaloApiError)) {
+          return;
+        }
+        expect(err.errorCode).toBeUndefined();
+        expect(err.isPollingTimeout).toBe(false);
+      }),
+    ).resolves.toBeUndefined();
   });
 });
