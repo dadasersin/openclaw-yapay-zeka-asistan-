@@ -137,14 +137,22 @@ export async function runNonInteractiveOnboardingLocal(params: {
     skipBootstrap: Boolean(nextConfig.agents?.defaults?.skipBootstrap),
   });
 
+  let primaryManagedServiceReady = !installDaemon;
   if (installDaemon) {
     const { installGatewayDaemonNonInteractive } = await import("./local/daemon-install.js");
-    await installGatewayDaemonNonInteractive({
+    primaryManagedServiceReady = await installGatewayDaemonNonInteractive({
       nextConfig,
       opts: { ...opts, installDaemon },
       runtime,
       port: gatewayResult.port,
     });
+    if (rescuePlan.rescueWatchdogEnabled && !primaryManagedServiceReady) {
+      runtime.error(
+        "Rescue watchdog requires a healthy primary managed service. Gateway service install failed during onboarding, so rescue watchdog was not configured.",
+      );
+      runtime.exit(1);
+      return;
+    }
   }
 
   const daemonRuntimeRaw = opts.daemonRuntime ?? DEFAULT_GATEWAY_DAEMON_RUNTIME;

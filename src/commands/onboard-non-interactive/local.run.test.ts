@@ -31,7 +31,7 @@ const applyNonInteractiveSkillsConfig = vi.hoisted(() =>
   vi.fn((params: { nextConfig: unknown }) => params.nextConfig),
 );
 const resolveNonInteractiveWorkspaceDir = vi.hoisted(() => vi.fn(() => "/tmp/workspace"));
-const installGatewayDaemonNonInteractive = vi.hoisted(() => vi.fn(async () => {}));
+const installGatewayDaemonNonInteractive = vi.hoisted(() => vi.fn(async () => true));
 
 vi.mock("../../config/config.js", () => ({
   resolveGatewayPort: vi.fn(() => 18_789),
@@ -116,6 +116,7 @@ describe("runNonInteractiveOnboardingLocal", () => {
       gatewayToken: "session-token",
     });
     resolveNonInteractiveWorkspaceDir.mockReturnValue("/tmp/workspace");
+    installGatewayDaemonNonInteractive.mockResolvedValue(true);
     setupRescueWatchdog.mockResolvedValue({
       enabled: true,
       monitoredProfile: "default",
@@ -149,6 +150,34 @@ describe("runNonInteractiveOnboardingLocal", () => {
 
     expect(runtime.error).toHaveBeenCalledWith("Rescue watchdog setup failed: boom");
     expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(logNonInteractiveOnboardingJson).not.toHaveBeenCalled();
+  });
+
+  it("exits non-zero when the primary managed service install fails before rescue setup", async () => {
+    installGatewayDaemonNonInteractive.mockResolvedValueOnce(false);
+    const runtime = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    await runNonInteractiveOnboardingLocal({
+      opts: {
+        acceptRisk: true,
+        authChoice: "skip",
+        rescueWatchdog: true,
+        skipHealth: true,
+        skipSkills: true,
+      },
+      runtime,
+      baseConfig: {},
+    });
+
+    expect(runtime.error).toHaveBeenCalledWith(
+      "Rescue watchdog requires a healthy primary managed service. Gateway service install failed during onboarding, so rescue watchdog was not configured.",
+    );
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(setupRescueWatchdog).not.toHaveBeenCalled();
     expect(logNonInteractiveOnboardingJson).not.toHaveBeenCalled();
   });
 });

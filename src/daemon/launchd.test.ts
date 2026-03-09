@@ -197,7 +197,6 @@ describe("launchd bootstrap repair", () => {
     const label = "ai.openclaw.gateway";
     const plistPath = resolveLaunchAgentPlistPath(env);
     const serviceId = `${domain}/${label}`;
-
     const enableIndex = state.launchctlCalls.findIndex(
       (c) => c[0] === "enable" && c[1] === serviceId,
     );
@@ -207,7 +206,6 @@ describe("launchd bootstrap repair", () => {
     const kickstartIndex = state.launchctlCalls.findIndex(
       (c) => c[0] === "kickstart" && c[1] === "-k" && c[2] === serviceId,
     );
-
     expect(enableIndex).toBeGreaterThanOrEqual(0);
     expect(bootstrapIndex).toBeGreaterThanOrEqual(0);
     expect(kickstartIndex).toBeGreaterThanOrEqual(0);
@@ -360,13 +358,17 @@ describe("launchd install", () => {
       expect(killSpy).toHaveBeenCalledWith(4242, 0);
       const domain = typeof process.getuid === "function" ? `gui/${process.getuid()}` : "gui/501";
       const label = "ai.openclaw.gateway";
-      const bootoutIndex = state.launchctlCalls.findIndex(
-        (c) => c[0] === "bootout" && c[1] === `${domain}/${label}`,
+      const serviceId = `${domain}/${label}`;
+      const bootoutIndex = state.launchctlCalls.findIndex((c) => c[0] === "bootout");
+      const enableIndex = state.launchctlCalls.findIndex(
+        (c) => c[0] === "enable" && c[1] === serviceId,
       );
       const bootstrapIndex = state.launchctlCalls.findIndex((c) => c[0] === "bootstrap");
       expect(bootoutIndex).toBeGreaterThanOrEqual(0);
+      expect(enableIndex).toBeGreaterThanOrEqual(0);
       expect(bootstrapIndex).toBeGreaterThanOrEqual(0);
-      expect(bootoutIndex).toBeLessThan(bootstrapIndex);
+      expect(bootoutIndex).toBeLessThan(enableIndex);
+      expect(enableIndex).toBeLessThan(bootstrapIndex);
     } finally {
       vi.useRealTimers();
       killSpy.mockRestore();
