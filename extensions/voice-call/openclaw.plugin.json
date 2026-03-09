@@ -568,6 +568,45 @@
               }
             }
           },
+          "minimax": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "apiKey": {
+                "type": "string"
+              },
+              "baseUrl": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "voiceId": {
+                "type": "string"
+              },
+              "speed": {
+                "type": "number",
+                "minimum": 0.5,
+                "maximum": 2
+              },
+              "vol": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 10
+              },
+              "pitch": {
+                "type": "integer",
+                "minimum": -12,
+                "maximum": 12
+              },
+              "emotion": {
+                "type": "string"
+              },
+              "languageBoost": {
+                "type": "string"
+              }
+            }
+          },
           "prefsPath": {
             "type": "string"
           },
