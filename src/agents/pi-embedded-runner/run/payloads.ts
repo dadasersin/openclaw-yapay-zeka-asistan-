@@ -56,12 +56,14 @@ function isSilentExecFailureFallbackEligible(params: {
   payloadCount: number;
   lastToolError?: LastToolError;
   suppressToolErrorWarnings?: boolean;
+  suppressSilentExecFailureFallback?: boolean;
   verboseLevel?: VerboseLevel;
   didSendViaMessagingTool?: boolean;
 }): boolean {
   if (
     params.payloadCount > 0 ||
     params.suppressToolErrorWarnings ||
+    params.suppressSilentExecFailureFallback ||
     params.didSendViaMessagingTool
   ) {
     return false;
@@ -121,6 +123,7 @@ export function buildEmbeddedRunPayloads(params: {
   reasoningLevel?: ReasoningLevel;
   toolResultFormat?: ToolResultFormat;
   suppressToolErrorWarnings?: boolean;
+  suppressSilentExecFailureFallback?: boolean;
   inlineToolResultsAllowed: boolean;
   didSendViaMessagingTool?: boolean;
 }): Array<{
@@ -363,6 +366,7 @@ export function buildEmbeddedRunPayloads(params: {
       payloadCount: payloads.length,
       lastToolError: params.lastToolError,
       suppressToolErrorWarnings: params.suppressToolErrorWarnings,
+      suppressSilentExecFailureFallback: params.suppressSilentExecFailureFallback,
       verboseLevel: params.verboseLevel,
       didSendViaMessagingTool: params.didSendViaMessagingTool,
     })

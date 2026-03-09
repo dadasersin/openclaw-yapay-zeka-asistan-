@@ -28,9 +28,13 @@ export const mockedGlobalHookRunner = {
   ),
 };
 
-vi.mock("../../plugins/hook-runner-global.js", () => ({
-  getGlobalHookRunner: vi.fn(() => mockedGlobalHookRunner),
-}));
+vi.mock("../../plugins/hook-runner-global.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../plugins/hook-runner-global.js")>();
+  return {
+    ...actual,
+    getGlobalHookRunner: vi.fn(() => mockedGlobalHookRunner),
+  };
+});
 
 vi.mock("../auth-profiles.js", () => ({
   isProfileInCooldown: vi.fn(() => false),
@@ -141,9 +145,13 @@ vi.mock("../../process/command-queue.js", () => ({
   enqueueCommandInLane: vi.fn((_lane: string, task: () => unknown) => task()),
 }));
 
-vi.mock("../../utils/message-channel.js", () => ({
-  isMarkdownCapableMessageChannel: vi.fn(() => true),
-}));
+vi.mock("../../utils/message-channel.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/message-channel.js")>();
+  return {
+    ...actual,
+    isMarkdownCapableMessageChannel: vi.fn(() => true),
+  };
+});
 
 vi.mock("../agent-paths.js", () => ({
   resolveOpenClawAgentDir: vi.fn(() => "/tmp/agent-dir"),
@@ -175,8 +183,10 @@ vi.mock("./logger.js", () => ({
   },
 }));
 
+export const mockedBuildEmbeddedRunPayloads = vi.fn(() => []);
+
 vi.mock("./run/payloads.js", () => ({
-  buildEmbeddedRunPayloads: vi.fn(() => []),
+  buildEmbeddedRunPayloads: mockedBuildEmbeddedRunPayloads,
 }));
 
 vi.mock("./tool-result-truncation.js", () => ({
@@ -188,11 +198,15 @@ vi.mock("./tool-result-truncation.js", () => ({
   sessionLikelyHasOversizedToolResults: vi.fn(() => false),
 }));
 
-vi.mock("./utils.js", () => ({
-  describeUnknownError: vi.fn((err: unknown) => {
-    if (err instanceof Error) {
-      return err.message;
-    }
-    return String(err);
-  }),
-}));
+vi.mock("./utils.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./utils.js")>();
+  return {
+    ...actual,
+    describeUnknownError: vi.fn((err: unknown) => {
+      if (err instanceof Error) {
+        return err.message;
+      }
+      return String(err);
+    }),
+  };
+});

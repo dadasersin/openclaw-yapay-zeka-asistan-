@@ -1415,6 +1415,7 @@ export async function runEmbeddedPiAgent(
             reasoningLevel: params.reasoningLevel,
             toolResultFormat: resolvedToolResultFormat,
             suppressToolErrorWarnings: params.suppressToolErrorWarnings,
+            suppressSilentExecFailureFallback: timedOut && !timedOutDuringCompaction,
             inlineToolResultsAllowed: false,
             didSendViaMessagingTool: attempt.didSendViaMessagingTool,
           });
