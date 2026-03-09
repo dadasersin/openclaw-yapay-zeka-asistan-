@@ -59,6 +59,8 @@ export function registerAdaptiveRoutingCli(program: Command) {
           localTokensCacheRead: 0,
           cloudTokensInput: 0,
           cloudTokensOutput: 0,
+          cloudTokensCacheRead: 0,
+          runsLocalForced: 0,
         };
         fresh.since = new Date().toISOString();
         fresh.lastUpdated = fresh.since;

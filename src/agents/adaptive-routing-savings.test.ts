@@ -139,6 +139,34 @@ describe("recordAdaptiveRun", () => {
     const ledger = await readSavingsLedger(nested);
     expect(ledger.totals.runsLocal).toBe(1);
   });
+
+  it("records local_forced separately from local_success (maxEscalations=0)", async () => {
+    await recordAdaptiveRun(tmpDir, {
+      kind: "local_forced",
+      localUsage: { input: 100, output: 40 },
+    });
+    await recordAdaptiveRun(tmpDir, {
+      kind: "local_success",
+      localUsage: { input: 200, output: 80 },
+    });
+    const ledger = await readSavingsLedger(tmpDir);
+    expect(ledger.totals.runsTotal).toBe(2);
+    expect(ledger.totals.runsLocal).toBe(1);
+    expect(ledger.totals.runsLocalForced).toBe(1);
+    expect(ledger.totals.localTokensInput).toBe(300);
+    expect(ledger.totals.localSuccessTokensInput).toBe(200);
+  });
+
+  it("accumulates cloud cacheRead tokens for escalated runs", async () => {
+    await recordAdaptiveRun(tmpDir, {
+      kind: "escalated",
+      localUsage: { input: 50, output: 20 },
+      cloudUsage: { input: 400, output: 150, cacheRead: 60 },
+    });
+    const ledger = await readSavingsLedger(tmpDir);
+    expect(ledger.totals.cloudTokensCacheRead).toBe(60);
+    expect(ledger.totals.cloudTokensInput).toBe(400);
+  });
 });
 
 // ─── computeSavingsMetrics ───────────────────────────────────────────────────

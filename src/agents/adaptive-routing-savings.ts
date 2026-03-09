@@ -22,6 +22,7 @@ export type AdaptiveRoutingTokenRecord = {
   /** Tokens used by the cloud escalation run (0 when no escalation). */
   cloudTokensInput: number;
   cloudTokensOutput: number;
+  cloudTokensCacheRead: number;
 };
 
 export type AdaptiveRoutingSavingsLedger = {
@@ -47,6 +48,9 @@ export type AdaptiveRoutingSavingsLedger = {
     /** Cumulative tokens sent to the cloud escalation model. */
     cloudTokensInput: number;
     cloudTokensOutput: number;
+    cloudTokensCacheRead: number;
+    /** Runs where validation failed but escalation was capped (maxEscalations=0). */
+    runsLocalForced: number;
     /** Tokens from local-success runs only (v2 field, backfilled as 0). */
     localSuccessTokensInput?: number;
     localSuccessTokensOutput?: number;
@@ -78,6 +82,8 @@ function emptyLedger(): AdaptiveRoutingSavingsLedger {
       localTokensCacheRead: 0,
       cloudTokensInput: 0,
       cloudTokensOutput: 0,
+      cloudTokensCacheRead: 0,
+      runsLocalForced: 0,
     },
   };
 }
@@ -133,6 +139,11 @@ export type RecordAdaptiveRunParams =
       localUsage?: NormalizedUsage | null;
     }
   | {
+      /** Validation failed but escalation was capped (maxEscalations=0). */
+      kind: "local_forced";
+      localUsage?: NormalizedUsage | null;
+    }
+  | {
       kind: "escalated";
       localUsage?: NormalizedUsage | null;
       cloudUsage?: NormalizedUsage | null;
@@ -167,9 +178,16 @@ export async function recordAdaptiveRun(
         t.localTokensInput += local.input;
         t.localTokensOutput += local.output;
         t.localTokensCacheRead += local.cacheRead;
-        // Track local-success-only tokens separately for accurate savings.
         t.localSuccessTokensInput = (t.localSuccessTokensInput ?? 0) + local.input;
         t.localSuccessTokensOutput = (t.localSuccessTokensOutput ?? 0) + local.output;
+      } else if (params.kind === "local_forced") {
+        // Validation failed but escalation was capped — don't inflate runsLocal
+        // or localSuccessTokens (those track genuinely passing runs only).
+        t.runsLocalForced = (t.runsLocalForced ?? 0) + 1;
+        const local = tokensFromUsage(params.localUsage);
+        t.localTokensInput += local.input;
+        t.localTokensOutput += local.output;
+        t.localTokensCacheRead += local.cacheRead;
       } else {
         // escalated
         t.runsEscalated += 1;
@@ -180,6 +198,7 @@ export async function recordAdaptiveRun(
         t.localTokensCacheRead += local.cacheRead;
         t.cloudTokensInput += cloud.input;
         t.cloudTokensOutput += cloud.output;
+        t.cloudTokensCacheRead = (t.cloudTokensCacheRead ?? 0) + cloud.cacheRead;
       }
     }
 
@@ -232,7 +251,7 @@ export function computeSavingsMetrics(ledger: AdaptiveRoutingSavingsLedger) {
           (t.localTokensInput + t.localTokensOutput) * (t.runsLocal / Math.max(1, t.runsTotal)),
         );
 
-  const cloudTotal = t.cloudTokensInput + t.cloudTokensOutput;
+  const cloudTotal = t.cloudTokensInput + t.cloudTokensOutput + (t.cloudTokensCacheRead ?? 0);
   const localTotal = t.localTokensInput + t.localTokensOutput + t.localTokensCacheRead;
 
   return {

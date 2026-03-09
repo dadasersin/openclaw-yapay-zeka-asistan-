@@ -532,7 +532,9 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
       );
 
       if (validation.passed || maxEscalations === 0) {
-        // Local result is good – promote temp session file to actual
+        // Local result is good (or forced-local due to maxEscalations cap) –
+        // promote temp session file to actual.
+        const forcedLocal = !validation.passed && maxEscalations === 0;
         await safeRename(tempSessionFile, originalSessionFile);
         logAdaptiveOutcome({
           used: true,
@@ -545,7 +547,7 @@ export async function runEmbeddedPiAgentWithAdaptiveRouting(
           escalated: false,
         });
         void recordAdaptiveRun(resolveStateDir(), {
-          kind: "local_success",
+          kind: forcedLocal ? "local_forced" : "local_success",
           localUsage: localAttemptResult?.attemptUsage ?? localResult.meta.agentMeta?.usage,
         });
         localResult.adaptiveRoutingMeta = {
