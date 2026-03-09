@@ -21,7 +21,7 @@ import {
   writeCache,
 } from "./web-shared.js";
 
-const SEARCH_PROVIDERS = ["brave", "gemini", "grok", "kimi", "perplexity"] as const;
+const SEARCH_PROVIDERS = ["brave", "gemini", "grok", "kimi", "perplexity", "querit"] as const;
 const DEFAULT_SEARCH_COUNT = 5;
 const MAX_SEARCH_COUNT = 10;
 
@@ -30,6 +30,7 @@ const BRAVE_LLM_CONTEXT_ENDPOINT = "https://api.search.brave.com/res/v1/llm/cont
 const DEFAULT_PERPLEXITY_BASE_URL = "https://openrouter.ai/api/v1";
 const PERPLEXITY_DIRECT_BASE_URL = "https://api.perplexity.ai";
 const PERPLEXITY_SEARCH_ENDPOINT = "https://api.perplexity.ai/search";
+const QUERIT_SEARCH_ENDPOINT = "https://api.querit.ai/v1/search";
 const DEFAULT_PERPLEXITY_MODEL = "perplexity/sonar-pro";
 const PERPLEXITY_KEY_PREFIXES = ["pplx-"];
 const OPENROUTER_KEY_PREFIXES = ["sk-or-"];
@@ -386,6 +387,25 @@ type PerplexitySearchApiResponse = {
   id?: string;
 };
 
+type QueritConfig = {
+  apiKey?: string;
+};
+
+type QueritSearchResult = {
+  title?: string;
+  url?: string;
+  snippet?: string;
+  site_name?: string;
+};
+
+type QueritSearchResponse = {
+  error_code?: number;
+  error?: string;
+  results?: {
+    result?: QueritSearchResult[];
+  };
+};
+
 function extractGrokContent(data: GrokSearchResponse): {
   text: string | undefined;
   annotationCitations: string[];
@@ -499,6 +519,13 @@ function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
       docs: "https://docs.openclaw.ai/tools/web",
     };
   }
+  if (provider === "querit") {
+    return {
+      error: "missing_querit_api_key",
+      message: `web_search (querit) needs an API key. Run \`${formatCliCommand("openclaw configure --section web")}\` to store it, or set QUERIT_API_KEY in the Gateway environment.`,
+      docs: "https://docs.openclaw.ai/tools/web",
+    };
+  }
   if (provider === "gemini") {
     return {
       error: "missing_gemini_api_key",
@@ -538,6 +565,9 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
       : "";
   if (raw === "brave") {
     return "brave";
+  }
+  if (raw === "querit") {
+    return "querit";
   }
   if (raw === "gemini") {
     return "gemini";
@@ -593,6 +623,14 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
         'web_search: no provider configured, auto-detected "perplexity" from available API keys',
       );
       return "perplexity";
+    }
+    // Querit
+    const queritConfig = resolveQueritConfig(search);
+    if (resolveQueritApiKey(queritConfig)) {
+      logVerbose(
+        'web_search: no provider configured, auto-detected "querit" from available API keys',
+      );
+      return "querit";
     }
   }
 
@@ -939,6 +977,26 @@ async function runGeminiSearch(params: {
       return { content, citations };
     },
   );
+}
+
+function resolveQueritConfig(search?: WebSearchConfig): QueritConfig {
+  if (!search || typeof search !== "object") {
+    return {};
+  }
+  const querit = "querit" in search ? search.querit : undefined;
+  if (!querit || typeof querit !== "object") {
+    return {};
+  }
+  return querit as QueritConfig;
+}
+
+function resolveQueritApiKey(querit?: QueritConfig): string | undefined {
+  const fromConfig = normalizeApiKey(querit?.apiKey);
+  if (fromConfig) {
+    return fromConfig;
+  }
+  const fromEnv = normalizeApiKey(process.env.QUERIT_API_KEY);
+  return fromEnv || undefined;
 }
 
 function resolveSearchCount(value: unknown, fallback: number): number {
@@ -1490,6 +1548,50 @@ async function runBraveLlmContextSearch(params: {
   );
 }
 
+async function runQueritSearch(params: {
+  query: string;
+  apiKey: string;
+  count: number;
+  timeoutSeconds: number;
+}): Promise<Array<{ title: string; url: string; snippet: string; siteName: string }>> {
+  return withTrustedWebSearchEndpoint(
+    {
+      url: QUERIT_SEARCH_ENDPOINT,
+      timeoutSeconds: params.timeoutSeconds,
+      init: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${params.apiKey}`,
+        },
+        body: JSON.stringify({ query: params.query, count: params.count }),
+      },
+    },
+    async (res) => {
+      if (!res.ok) {
+        return await throwWebSearchApiError(res, "Querit");
+      }
+
+      const data = (await res.json()) as QueritSearchResponse;
+
+      if (data.error_code && data.error_code !== 200) {
+        throw new Error(`Querit API error (${data.error_code}): ${data.error ?? "Unknown error"}`);
+      }
+
+      if (!data.results?.result || !Array.isArray(data.results.result)) {
+        return [];
+      }
+
+      return data.results.result.map((entry) => ({
+        title: entry.title ?? "",
+        url: entry.url ?? "",
+        snippet: entry.snippet ?? "",
+        siteName: entry.site_name ?? resolveSiteName(entry.url) ?? "",
+      }));
+    },
+  );
+}
+
 async function runWebSearch(params: {
   query: string;
   count: number;
@@ -1682,6 +1784,38 @@ async function runWebSearch(params: {
     return payload;
   }
 
+  if (params.provider === "querit") {
+    const results = await runQueritSearch({
+      query: params.query,
+      apiKey: params.apiKey,
+      count: params.count,
+      timeoutSeconds: params.timeoutSeconds,
+    });
+
+    const mapped = results.slice(0, params.count).map((entry) => ({
+      title: entry.title ? wrapWebContent(entry.title, "web_search") : "",
+      url: entry.url,
+      description: entry.snippet ? wrapWebContent(entry.snippet, "web_search") : "",
+      siteName: entry.siteName,
+    }));
+
+    const payload = {
+      query: params.query,
+      provider: params.provider,
+      count: mapped.length,
+      tookMs: Date.now() - start,
+      externalContent: {
+        untrusted: true,
+        source: "web_search",
+        provider: params.provider,
+        wrapped: true,
+      },
+      results: mapped,
+    };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
   if (params.provider !== "brave") {
     throw new Error("Unsupported web search provider.");
   }
@@ -1814,6 +1948,7 @@ export function createWebSearchTool(options?: {
   const perplexityConfig = resolvePerplexityConfig(search);
   const perplexityTransport = resolvePerplexityTransport(perplexityConfig);
   const grokConfig = resolveGrokConfig(search);
+  const queritConfig = resolveQueritConfig(search);
   const geminiConfig = resolveGeminiConfig(search);
   const kimiConfig = resolveKimiConfig(search);
   const braveConfig = resolveBraveConfig(search);
@@ -1830,9 +1965,11 @@ export function createWebSearchTool(options?: {
           ? "Search the web using Kimi by Moonshot. Returns AI-synthesized answers with citations from native $web_search."
           : provider === "gemini"
             ? "Search the web using Gemini with Google Search grounding. Returns AI-synthesized answers with citations from Google Search."
-            : braveMode === "llm-context"
-              ? "Search the web using Brave Search LLM Context API. Returns pre-extracted page content (text chunks, tables, code blocks) optimized for LLM grounding."
-              : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
+            : provider === "querit"
+              ? "Search the web using Querit search API. Returns titles, URLs, and snippets for fast research."
+              : braveMode === "llm-context"
+                ? "Search the web using Brave Search LLM Context API. Returns pre-extracted page content (text chunks, tables, code blocks) optimized for LLM grounding."
+                : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
 
   return {
     label: "Web Search",
@@ -1853,7 +1990,9 @@ export function createWebSearchTool(options?: {
               ? resolveKimiApiKey(kimiConfig)
               : provider === "gemini"
                 ? resolveGeminiApiKey(geminiConfig)
-                : resolveSearchApiKey(search);
+                : provider === "querit"
+                  ? resolveQueritApiKey(queritConfig)
+                  : resolveSearchApiKey(search);
 
       if (!apiKey) {
         return jsonResult(missingSearchKeyPayload(provider));
@@ -2120,6 +2259,8 @@ export const __testing = {
   resolveKimiModel,
   resolveKimiBaseUrl,
   extractKimiCitations,
+  resolveQueritApiKey,
+  resolveQueritConfig,
   resolveRedirectUrl: resolveCitationRedirectUrl,
   resolveBraveMode,
 } as const;
