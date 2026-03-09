@@ -48,9 +48,9 @@ export type AdaptiveRoutingSavingsLedger = {
     /** Cumulative tokens sent to the cloud escalation model. */
     cloudTokensInput: number;
     cloudTokensOutput: number;
-    cloudTokensCacheRead: number;
+    cloudTokensCacheRead?: number;
     /** Runs where validation failed but escalation was capped (maxEscalations=0). */
-    runsLocalForced: number;
+    runsLocalForced?: number;
     /** Tokens from local-success runs only (v2 field, backfilled as 0). */
     localSuccessTokensInput?: number;
     localSuccessTokensOutput?: number;

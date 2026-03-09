@@ -495,6 +495,7 @@ export async function runMemoryFlushIfNeeded(params: {
           ...senderContext,
           ...runBaseParams,
           trigger: "memory",
+          _hasExplicitModelOverride: params.followupRun.run.modelExplicitOverride ?? false,
           prompt: resolveMemoryFlushPromptForRun({
             prompt: memoryFlushSettings.prompt,
             cfg: params.cfg,
