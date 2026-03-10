@@ -238,7 +238,7 @@ export function createDiscordVoiceCommand(params: VoiceCommandContext): CommandW
   class JoinCommand extends Command {
     name = "join";
     description = "Join a voice channel";
-    defer = true;
+    defer = false;
     ephemeral = params.ephemeralDefault;
     options: CommandOptions = [
       {
@@ -293,8 +293,12 @@ export function createDiscordVoiceCommand(params: VoiceCommandContext): CommandW
         return;
       }
 
+      await interaction.reply({
+        content: `Joining ${formatMention({ channelId: channel.id })}...`,
+        ephemeral: true,
+      });
       const result = await manager.join({ guildId, channelId: channel.id });
-      await interaction.reply({ content: result.message, ephemeral: true });
+      await interaction.followUp({ content: result.message, ephemeral: true });
     }
   }
 
