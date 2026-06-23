@@ -1,4 +1,4 @@
-FROM node:22-bookworm@sha256:b501c082306a4f528bc4038cbf2fbb58095d583d0419a259b2114b5ac53d12e9
+FROM node:26-bookworm@sha256:17895f86b5d1bed5ea97bde2ef4b2e8da46d6024d2eae32a5245bf0d0fb9ecd6
 
 # OCI base-image metadata for downstream image consumers.
 # If you change these annotations, also update:
